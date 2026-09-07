@@ -8,6 +8,15 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = (supabaseUrl && supabaseAnonKey) ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
+// 本日の日付を YYYY-MM-DD 形式で取得
+const getTodayDateString = (): string => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 // 空港マスタ
 const DOMESTIC_AIRPORTS = [
   { code: 'HND', name: '羽田' },
@@ -72,7 +81,6 @@ const getBaseLTMFromNames = (depName: string, arrName: string): number => {
   return 0;
 };
 
-// Supabase取得失敗時のフォールバックデータ
 const FALLBACK_FARES = [
   { id: 1, flight_type: 'domestic', fare_category: '運賃1', accumulation_rate: 150, boarding_points: 400, description: 'プレミアム運賃', display_order: 1 },
   { id: 2, flight_type: 'domestic', fare_category: '運賃3', accumulation_rate: 100, boarding_points: 400, description: 'ANA FLEX', display_order: 3 },
@@ -116,15 +124,16 @@ export default function Home() {
   const [authMsg, setAuthMessage] = useState<string>('');
   const [authLoading, setAuthLoading] = useState<boolean>(false);
 
-  // 運賃マスタ状態（Supabaseから動的取得）
+  // 運賃マスタ状態
   const [fareMasterList, setFareMasterList] = useState<FareMaster[]>(FALLBACK_FARES as FareMaster[]);
   const [selectedFareId, setSelectedFareId] = useState<number | string>('');
 
-  // ヘッダー3点ドットメニュー状態
+  // ヘッダー＆ドロップダウンメニュー用 Ref (モーダル外クリック検知)
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState<boolean>(false);
+  const headerMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ユーザー設定状態（デフォルトは一般会員 / LTM 0）
+  // ユーザー設定状態
   const [currentStatus, setCurrentStatus] = useState<string>('none');
   const [cardType, setCardType] = useState<string>('general');
   const [pastAnaLTM, setPastAnaLTM] = useState<number>(0);
@@ -149,13 +158,13 @@ export default function Home() {
   const [feedbackContent, setFeedbackContent] = useState('');
   const [feedbackSending, setFeedbackSending] = useState(false);
 
-  // 入力フォーム状態
+  // 入力フォーム状態（デフォルト搭乗日を「本日」に設定）
   const [flightType, setFlightType] = useState<'domestic' | 'international'>('domestic');
   const [airline, setAirline] = useState<'ana' | 'star'>('ana');
-  const [date, setDate] = useState('2026-01-15');
+  const [date, setDate] = useState<string>(getTodayDateString());
   const [depAirport, setDepAirport] = useState('HND');
   const [arrAirport, setArrAirport] = useState('OKA');
-  const [cost, setCost] = useState('');
+  const [cost, setCost] = useState(''); // 任意入力
   const [accRate, setAccRate] = useState<number>(100);
   const [boardPoints, setBoardPoints] = useState<number>(400);
 
@@ -167,7 +176,18 @@ export default function Home() {
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | number | null>(null);
 
-  // 運賃マスタの読み込み
+  // 外側クリックでヘッダーメニューを閉じる処理
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(event.target as Node)) {
+        setIsHeaderMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // 運賃マスタの取得
   const fetchFareMaster = async () => {
     if (!supabase) return;
     const { data, error } = await supabase
@@ -234,10 +254,8 @@ export default function Home() {
       setFlights(JSON.parse(savedFlights));
     } else {
       setFlights([
-        { id: 1, date: '2026-01-15', type: 'domestic', airline: 'ana', route: '羽田 - 那覇', cost: 24000, pp: 2860, miles: 1476, ltm: 984 },
-        { id: 2, date: '2026-01-18', type: 'domestic', airline: 'ana', route: '那覇 - 羽田', cost: 24000, pp: 2860, miles: 1476, ltm: 984 },
-        { id: 3, date: '2026-02-10', type: 'domestic', airline: 'ana', route: '羽田 - 伊丹', cost: 12000, pp: 1100, miles: 420, ltm: 280 },
-        { id: 4, date: '2026-02-12', type: 'domestic', airline: 'ana', route: '伊丹 - 羽田', cost: 12000, pp: 1100, miles: 420, ltm: 280 },
+        { id: 1, date: getTodayDateString(), type: 'domestic', airline: 'ana', route: '羽田 - 那覇', cost: 24000, pp: 2860, miles: 1476, ltm: 984 },
+        { id: 2, date: getTodayDateString(), type: 'domestic', airline: 'ana', route: '那覇 - 羽田', cost: 24000, pp: 2860, miles: 1476, ltm: 984 },
       ]);
     }
 
@@ -263,6 +281,7 @@ export default function Home() {
     }
   }, []);
 
+  // クラウドデータのロード（削除追従修正済み）
   const loadCloudData = async (user: User) => {
     if (!supabase) return;
 
@@ -280,50 +299,28 @@ export default function Home() {
       setSelectedStatus(profile.target_status || 'platinum');
       setGoalMode(profile.goal_mode || 'flight');
       setTargetLTMInput(profile.target_ltm || '1,000,000');
-    } else {
-      await supabase.from('profiles').upsert({
-        id: user.id,
-        current_status: currentStatus,
-        card_type: cardType,
-        past_ana_ltm: pastAnaLTM,
-        past_star_ltm: pastStarLTM,
-        target_status: selectedStatus,
-        goal_mode: goalMode,
-        target_ltm: targetLTMInput,
-      });
     }
 
     const { data: dbFlights } = await supabase
       .from('flights')
       .select('*')
-      .eq('user_id', user.id);
+      .eq('user_id', user.id)
+      .order('flight_date', { ascending: false });
 
-    if (dbFlights && dbFlights.length > 0) {
+    // DB側にデータが存在する場合は、たとえ0件（全削除後）であってもDBの状態を正として同期
+    if (dbFlights !== null) {
       const formattedFlights: Flight[] = dbFlights.map(f => ({
         id: f.id,
         date: f.flight_date,
         type: f.type,
         airline: f.airline,
         route: f.route,
-        cost: f.cost,
+        cost: f.cost || 0,
         pp: f.pp,
         miles: f.miles,
         ltm: f.ltm
       }));
       setFlights(formattedFlights);
-    } else if (flights.length > 0) {
-      const rowsToInsert = flights.map(f => ({
-        user_id: user.id,
-        flight_date: f.date,
-        type: f.type,
-        airline: f.airline,
-        route: f.route,
-        cost: f.cost,
-        pp: f.pp,
-        miles: f.miles,
-        ltm: f.ltm
-      }));
-      await supabase.from('flights').insert(rowsToInsert);
     }
   };
 
@@ -352,7 +349,7 @@ export default function Home() {
     }
   }, [currentStatus, cardType, pastAnaLTM, pastStarLTM, flights, targetLTMInput, goalMode, selectedStatus, currentUser, mounted]);
 
-  // 種別（国内/国際）が切り替わった時に運賃プルダウンの初期値を自動セット
+  // 種別切り替え時に運賃初期値をセット
   useEffect(() => {
     if (!editingId) {
       if (flightType === 'domestic') {
@@ -504,7 +501,7 @@ export default function Home() {
     })
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  const totalCost = filteredFlights.reduce((sum, f) => sum + f.cost, 0);
+  const totalCost = filteredFlights.reduce((sum, f) => sum + (f.cost || 0), 0);
   const totalLTMInYear = filteredFlights.reduce((sum, f) => sum + f.ltm, 0);
 
   const anaPP = filteredFlights.filter(f => f.airline === 'ana').reduce((sum, f) => sum + f.pp, 0);
@@ -613,11 +610,13 @@ export default function Home() {
     return `${depName} - ${arrName}`;
   };
 
+  // フライト保存処理（支払金額任意化）
   const handleSaveFlight = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!cost || routeError || calculatedPP === null || calculatedMiles === null || calculatedLTM === null) return;
+    if (routeError || calculatedPP === null || calculatedMiles === null || calculatedLTM === null) return;
 
     const routeLabel = getRouteLabel();
+    const flightCost = cost ? Number(cost) : 0; // 空白時は 0 円として登録
 
     if (currentUser && supabase) {
       if (editingId) {
@@ -626,14 +625,14 @@ export default function Home() {
           type: flightType,
           airline,
           route: routeLabel,
-          cost: Number(cost),
+          cost: flightCost,
           pp: calculatedPP,
           miles: calculatedMiles,
           ltm: calculatedLTM
         }).eq('id', editingId);
 
         setFlights(flights.map(f => f.id === editingId ? {
-          ...f, date, type: flightType, airline, route: routeLabel, cost: Number(cost), pp: calculatedPP, miles: calculatedMiles, ltm: calculatedLTM
+          ...f, date, type: flightType, airline, route: routeLabel, cost: flightCost, pp: calculatedPP, miles: calculatedMiles, ltm: calculatedLTM
         } : f));
         setEditingId(null);
       } else {
@@ -643,7 +642,7 @@ export default function Home() {
           type: flightType,
           airline,
           route: routeLabel,
-          cost: Number(cost),
+          cost: flightCost,
           pp: calculatedPP,
           miles: calculatedMiles,
           ltm: calculatedLTM
@@ -651,7 +650,7 @@ export default function Home() {
 
         if (data) {
           const newFlight: Flight = {
-            id: data.id, date, type: flightType, airline, route: routeLabel, cost: Number(cost), pp: calculatedPP, miles: calculatedMiles, ltm: calculatedLTM
+            id: data.id, date, type: flightType, airline, route: routeLabel, cost: flightCost, pp: calculatedPP, miles: calculatedMiles, ltm: calculatedLTM
           };
           setFlights([newFlight, ...flights]);
         }
@@ -659,12 +658,12 @@ export default function Home() {
     } else {
       if (editingId) {
         setFlights(flights.map(f => f.id === editingId ? {
-          ...f, date, type: flightType, airline, route: routeLabel, cost: Number(cost), pp: calculatedPP, miles: calculatedMiles, ltm: calculatedLTM
+          ...f, date, type: flightType, airline, route: routeLabel, cost: flightCost, pp: calculatedPP, miles: calculatedMiles, ltm: calculatedLTM
         } : f));
         setEditingId(null);
       } else {
         const newFlight: Flight = {
-          id: Date.now(), date, type: flightType, airline, route: routeLabel, cost: Number(cost), pp: calculatedPP, miles: calculatedMiles, ltm: calculatedLTM
+          id: Date.now(), date, type: flightType, airline, route: routeLabel, cost: flightCost, pp: calculatedPP, miles: calculatedMiles, ltm: calculatedLTM
         };
         setFlights([newFlight, ...flights]);
       }
@@ -677,7 +676,7 @@ export default function Home() {
     setDate(flight.date);
     setFlightType(flight.type);
     setAirline(flight.airline);
-    setCost(flight.cost.toString());
+    setCost(flight.cost ? flight.cost.toString() : '');
 
     if (flight.route.includes('-')) {
       const parts = flight.route.split('-').map(s => s.trim());
@@ -690,9 +689,15 @@ export default function Home() {
     setOpenMenuId(null);
   };
 
+  // 削除処理（Supabase側も確実に削除）
   const handleDelete = async (id: string | number) => {
     if (currentUser && supabase) {
-      await supabase.from('flights').delete().eq('id', id);
+      const { error } = await supabase.from('flights').delete().eq('id', id).eq('user_id', currentUser.id);
+      if (error) {
+        console.error('削除失敗:', error);
+        alert('削除処理に失敗しました。');
+        return;
+      }
     }
     setFlights(flights.filter(f => f.id !== id));
     setOpenMenuId(null);
@@ -705,9 +710,9 @@ export default function Home() {
       f.type === 'domestic' ? '国内線' : '国際線',
       f.airline === 'ana' ? 'ANAグループ便' : 'スターアライアンス/他社便',
       `"${f.route}"`,
-      f.cost,
+      f.cost || 0,
       f.pp,
-      (f.cost / f.pp).toFixed(1),
+      f.cost && f.pp > 0 ? (f.cost / f.pp).toFixed(1) : '0',
       f.miles,
       f.ltm
     ]);
@@ -864,7 +869,6 @@ export default function Home() {
     e.target.value = '';
   };
 
-  // 表示中の種別（国内線/国際線）に応じた運賃一覧
   const currentFares = fareMasterList.filter(f => f.flight_type === flightType);
 
   return (
@@ -898,7 +902,8 @@ export default function Home() {
               ))}
             </select>
 
-            <div className="relative">
+            {/* 3点ドットメニュー（ref追加） */}
+            <div className="relative" ref={headerMenuRef}>
               <button
                 onClick={() => setIsHeaderMenuOpen(!isHeaderMenuOpen)}
                 className="bg-white/15 hover:bg-white/25 text-white w-9 h-9 rounded-lg flex items-center justify-center text-lg font-bold transition border border-white/20 shadow-sm"
@@ -1233,7 +1238,7 @@ export default function Home() {
             <p className="text-xs text-slate-300">ゴールド以上のカードなら搭乗ボーナスマイル25%〜UP。修行中の効率が大幅に向上します。</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 w-full md:w-auto">
-            <a href="https://your-affiliate-link-gold.com" target="_blank" rel="noopener noreferrer" className="flex-1 md:flex-none text-center bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-lg transition">ANAゴールドを発行 💳</a>
+            <a href="https://www.ana.co.jp/ja/jp/amc/anacard/" target="_blank" rel="noopener noreferrer" className="flex-1 md:flex-none text-center bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-lg transition">ANAゴールドを発行 💳</a>
           </div>
         </div>
       </div>
@@ -1338,8 +1343,8 @@ export default function Home() {
           </div>
 
           <div>
-            <label className="text-xs text-slate-500 font-medium">支払金額 (円)</label>
-            <input type="number" placeholder="24000" value={cost} onChange={(e) => setCost(e.target.value)} className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm bg-white" />
+            <label className="text-xs text-slate-500 font-medium">支払金額 (円) <span className="text-[10px] text-slate-400">※任意</span></label>
+            <input type="number" placeholder="未入力可" value={cost} onChange={(e) => setCost(e.target.value)} className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm bg-white" />
           </div>
         </div>
 
@@ -1392,11 +1397,9 @@ export default function Home() {
 
         <button
           type="submit"
-          disabled={!!routeError || !cost}
+          disabled={!!routeError}
           className={`font-medium px-5 py-2.5 rounded-lg transition w-full md:w-auto shadow-sm ${
-            routeError || !cost
-              ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-              : theme.primaryBtn
+            routeError ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : theme.primaryBtn
           }`}
         >
           {editingId ? '更新を保存する' : 'フライトを登録する'}
@@ -1488,9 +1491,9 @@ export default function Home() {
                   </span>
                 </td>
                 <td className="p-3 font-medium text-slate-800">{f.route}</td>
-                <td className="p-3">¥{f.cost.toLocaleString()}</td>
+                <td className="p-3">¥{(f.cost || 0).toLocaleString()}</td>
                 <td className="p-3 font-semibold text-blue-600">{f.pp.toLocaleString()}</td>
-                <td className="p-3 font-semibold text-emerald-600">¥{f.pp > 0 ? (f.cost / f.pp).toFixed(1) : '0'}</td>
+                <td className="p-3 font-semibold text-emerald-600">¥{f.cost && f.pp > 0 ? (f.cost / f.pp).toFixed(1) : '0'}</td>
                 <td className="p-3">{f.ltm.toLocaleString()} M</td>
                 <td className="p-3 text-right relative">
                   <button onClick={() => setOpenMenuId(openMenuId === f.id ? null : f.id)} className="px-2 py-1 text-slate-500 hover:bg-slate-200 rounded text-lg font-bold">
