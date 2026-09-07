@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Script from "next/script";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,14 +14,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <head>
-        {/* Featurebase SDK の読み込み */}
-        <Script
-          src="https://do.featurebase.app/js/sdk.js"
-          id="featurebase-sdk"
-          strategy="afterInteractive"
-        />
-      </head>
       <body>{children}</body>
     </html>
   );

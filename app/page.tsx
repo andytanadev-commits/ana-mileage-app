@@ -135,19 +135,34 @@ export default function Home() {
 
   const [flights, setFlights] = useState<Flight[]>([]);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const win = window as any;
-      win.Featurebase = win.Featurebase || function () {
-        (win.Featurebase.q = win.Featurebase.q || []).push(arguments);
-      };
-      win.Featurebase('initialize_feedback_widget', {
-        // ↓ ご自身のURL（https://〇〇.featurebase.app）の「〇〇」の部分を入力してください
-        organization: 'ana-mileage', 
-        theme: 'light',
-      });
+  // フィードバック自作モーダル状態
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [feedbackType, setFeedbackType] = useState('bug');
+  const [feedbackContent, setFeedbackContent] = useState('');
+  const [feedbackSending, setFeedbackSending] = useState(false);
+
+  // フィードバック送信処理
+  const handleSendFeedback = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!feedbackContent || !supabase) return;
+
+    setFeedbackSending(true);
+    const { error } = await supabase.from('feedbacks').insert({
+      user_email: currentUser?.email || '未ログインユーザー',
+      type: feedbackType,
+      content: feedbackContent,
+    });
+
+    setFeedbackSending(false);
+    if (!error) {
+      alert('フィードバックを送信しました。ご協力ありがとうございます！');
+      setFeedbackContent('');
+      setIsFeedbackOpen(false);
+    } else {
+      alert('送信に失敗しました。時間をおいて再度お試しください。');
     }
-  }, []);
+  };
+
 
   // 初期読み込み & 認証状態監視
   useEffect(() => {
@@ -1451,13 +1466,61 @@ export default function Home() {
           </tbody>
         </table>
       </div>
-      {/* 画面右下のフィードバックボタン */}
+
+      {/* フィードバック用自作モーダル */}
+      {isFeedbackOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-slate-200">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">💬 ご要望・エラー報告</h3>
+              <button onClick={() => setIsFeedbackOpen(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold px-2">✕</button>
+            </div>
+
+            <form onSubmit={handleSendFeedback} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">種別</label>
+                <select
+                  value={feedbackType}
+                  onChange={(e) => setFeedbackType(e.target.value)}
+                  className="w-full border p-2 rounded-lg text-xs bg-slate-50 text-slate-800 font-medium"
+                >
+                  <option value="bug">🐛 不具合・バグの報告</option>
+                  <option value="feature">💡 改善案・機能のご要望</option>
+                  <option value="other">📝 その他のお問い合わせ</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">内容</label>
+                <textarea
+                  required
+                  rows={4}
+                  placeholder="お気づきの点やご希望の機能を自由にご記入ください"
+                  value={feedbackContent}
+                  onChange={(e) => setFeedbackContent(e.target.value)}
+                  className="w-full border p-2.5 rounded-lg text-xs text-slate-800 bg-slate-50 focus:bg-white"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setIsFeedbackOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700">キャンセル</button>
+                <button type="submit" disabled={feedbackSending || !feedbackContent} className="bg-slate-800 hover:bg-slate-900 text-white px-5 py-2 rounded-lg text-xs font-bold transition shadow-sm">
+                  {feedbackSending ? '送信中...' : '送信する'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 右下起動ボタン */}
       <button
-        data-featurebase-feedback
-        className="fixed bottom-5 right-5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3.5 py-2.5 rounded-full shadow-lg border border-slate-700 flex items-center gap-1.5 z-50 transition hover:scale-105 cursor-pointer"
+        onClick={() => setIsFeedbackOpen(true)}
+        className="fixed bottom-5 right-5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3.5 py-2.5 rounded-full shadow-lg border border-slate-700 flex items-center gap-1.5 z-40 transition hover:scale-105 cursor-pointer"
       >
         <span>💬</span> ご要望・改善案
       </button>
+
     </main>
   );
 }
