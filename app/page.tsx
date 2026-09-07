@@ -1196,6 +1196,22 @@ export default function Home() {
         </div>
       </div>
 
+      {/* アフィリエイト枠1：ANAカード訴求 */}
+      <div className="bg-gradient-to-r from-slate-900 to-indigo-950 rounded-xl p-5 text-white shadow-md mb-8 border border-indigo-900/50">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="space-y-1 text-center md:text-left">
+            <div className="flex items-center justify-center md:justify-start gap-2">
+              <span className="bg-amber-400 text-slate-950 font-black text-[10px] px-2 py-0.5 rounded-full uppercase">SFC修行必携</span>
+              <h3 className="font-bold text-sm text-amber-200">積算率・ボーナスマイルを最大化するANAカード</h3>
+            </div>
+            <p className="text-xs text-slate-300">ゴールド以上のカードなら搭乗ボーナスマイル25%〜UP。修行中の効率が大幅に向上します。</p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0 w-full md:w-auto">
+            <a href="https://your-affiliate-link-gold.com" target="_blank" rel="noopener noreferrer" className="flex-1 md:flex-none text-center bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-lg transition">ANAゴールドを発行 💳</a>
+          </div>
+        </div>
+      </div>
+
       {/* LTMシミュレーション */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-850 to-slate-800 text-white p-6 rounded-xl shadow-md mb-8">
         <div className="flex justify-between items-center mb-2">
@@ -1521,6 +1537,29 @@ export default function Home() {
         <span>💬</span> ご要望・改善案
       </button>
 
+      {/* アフィリエイト枠2：ホテル予約訴求 */}
+      <div className="mt-8 bg-white p-5 rounded-xl border border-slate-200 shadow-sm text-center md:text-left md:flex justify-between items-center gap-4">
+        <div>
+          <h3 className="font-bold text-sm text-slate-800">🏨 修行フライトの宿泊手配はお済みですか？</h3>
+          <p className="text-xs text-slate-500 mt-1">宿泊でもマイルが貯まる予約サイトで修行コストを無駄なく活用しましょう。</p>
+        </div>
+        <div className="mt-3 md:mt-0 flex gap-2 justify-center flex-shrink-0">
+          <a href="https://your-affiliate-link-hotel.com" target="_blank" rel="noopener noreferrer" className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg transition">ホテルを探す ✈️</a>
+        </div>
+      </div>
+
+      {/* フッターリンク */}
+      <footer className="mt-16 text-center text-xs text-slate-500 space-y-2 border-t border-slate-200/60 pt-6 pb-20">
+        <div className="flex justify-center gap-4 font-medium">
+          <a href="/privacy" className="hover:underline text-slate-600">プライバシーポリシー</a>
+          <span>•</span>
+          <button onClick={() => setIsFeedbackOpen(true)} className="hover:underline text-slate-600 cursor-pointer">お問い合わせ</button>
+        </div>
+        <p>© 2026 ANA マイレージ＆PP管理 by AT Corporation LLC All Rights Reserved.</p>
+      </footer>
+
+      {/* フィードバック用自作モーダル */}
+      {/* ...既存コード... */}
     </main>
   );
 }
