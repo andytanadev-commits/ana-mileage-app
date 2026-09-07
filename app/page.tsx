@@ -1544,7 +1544,7 @@ export default function Home() {
           <p className="text-xs text-slate-500 mt-1">宿泊でもマイルが貯まる予約サイトで修行コストを無駄なく活用しましょう。</p>
         </div>
         <div className="mt-3 md:mt-0 flex gap-2 justify-center flex-shrink-0">
-          <a href="https://your-affiliate-link-hotel.com" target="_blank" rel="noopener noreferrer" className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg transition">ホテルを探す ✈️</a>
+          <a href="https://px.a8.net/svt/ejp?a8mat=4BC5IV+EMB7JM+4X1W+5YRHE" target="_blank" rel="noopener noreferrer" className="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg transition">ホテルを探す ✈️</a>
         </div>
       </div>
 
