@@ -135,6 +135,20 @@ export default function Home() {
 
   const [flights, setFlights] = useState<Flight[]>([]);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const win = window as any;
+      win.Featurebase = win.Featurebase || function () {
+        (win.Featurebase.q = win.Featurebase.q || []).push(arguments);
+      };
+      win.Featurebase('initialize_feedback_widget', {
+        // ↓ ご自身のURL（https://〇〇.featurebase.app）の「〇〇」の部分を入力してください
+        organization: 'ana-mileage', 
+        theme: 'light',
+      });
+    }
+  }, []);
+
   // 初期読み込み & 認証状態監視
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1438,14 +1452,12 @@ export default function Home() {
         </table>
       </div>
       {/* 画面右下のフィードバックボタン */}
-      <a
-        href="https://atcorporation.featurebase.app/"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="fixed bottom-5 right-5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3.5 py-2.5 rounded-full shadow-lg border border-slate-700 flex items-center gap-1.5 z-50 transition hover:scale-105"
+      <button
+        data-featurebase-feedback
+        className="fixed bottom-5 right-5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3.5 py-2.5 rounded-full shadow-lg border border-slate-700 flex items-center gap-1.5 z-50 transition hover:scale-105 cursor-pointer"
       >
         <span>💬</span> ご要望・改善案
-      </a>
+      </button>
     </main>
   );
 }
