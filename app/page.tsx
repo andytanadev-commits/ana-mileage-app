@@ -116,11 +116,11 @@ export default function Home() {
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ユーザー設定状態
+  // ユーザー設定状態（デフォルトは一般会員 / LTM 0）
   const [currentStatus, setCurrentStatus] = useState<string>('none');
   const [cardType, setCardType] = useState<string>('general');
-  const [pastAnaLTM, setPastAnaLTM] = useState<number>(120000);
-  const [pastStarLTM, setPastStarLTM] = useState<number>(30000);
+  const [pastAnaLTM, setPastAnaLTM] = useState<number>(0);
+  const [pastStarLTM, setPastStarLTM] = useState<number>(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   // 目標設定状態
@@ -164,9 +164,12 @@ export default function Home() {
     if (savedFlights) {
       setFlights(JSON.parse(savedFlights));
     } else {
+      // デフォルトのサンプルフライト（羽田ー那覇 往復、羽田ー伊丹 往復）
       setFlights([
-        { id: 1, date: '2026-05-29', type: 'international', airline: 'ana', route: '羽田 - バンコク', cost: 180000, pp: 5779, miles: 3586, ltm: 2869 },
-        { id: 2, date: '2026-01-15', type: 'domestic', airline: 'ana', route: '羽田 - 那覇', cost: 24000, pp: 2860, miles: 1476, ltm: 984 },
+        { id: 1, date: '2026-01-15', type: 'domestic', airline: 'ana', route: '羽田 - 那覇', cost: 24000, pp: 2860, miles: 1476, ltm: 984 },
+        { id: 2, date: '2026-01-18', type: 'domestic', airline: 'ana', route: '那覇 - 羽田', cost: 24000, pp: 2860, miles: 1476, ltm: 984 },
+        { id: 3, date: '2026-02-10', type: 'domestic', airline: 'ana', route: '羽田 - 伊丹', cost: 12000, pp: 1100, miles: 420, ltm: 280 },
+        { id: 4, date: '2026-02-12', type: 'domestic', airline: 'ana', route: '伊丹 - 羽田', cost: 12000, pp: 1100, miles: 420, ltm: 280 },
       ]);
     }
 
@@ -281,7 +284,6 @@ export default function Home() {
     }
   }, [currentStatus, cardType, pastAnaLTM, pastStarLTM, flights, targetLTMInput, goalMode, selectedStatus, currentUser, mounted]);
 
-  // データが存在する「年」を動的に抽出（降順ソート、当年含む）
   const availableYears = Array.from(
     new Set([
       new Date().getFullYear().toString(),
@@ -289,7 +291,18 @@ export default function Home() {
     ])
   ).sort((a, b) => Number(b) - Number(a));
 
-  // Google ログイン
+  // ユーザー設定ボタンのハンドラー（未ログイン時は開かない）
+  const handleOpenSettings = () => {
+    setIsHeaderMenuOpen(false);
+    if (!currentUser) {
+      alert('ユーザー設定を変更するにはログインが必要です。');
+      setAuthMessage('');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    setIsSettingsOpen(true);
+  };
+
   const handleGoogleLogin = async () => {
     if (!supabase) return;
     setAuthLoading(true);
@@ -308,7 +321,6 @@ export default function Home() {
     }
   };
 
-  // メール＆パスワード ログイン・会員登録処理
   const handleEmailPasswordAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supabase || !authEmail || !authPassword) return;
@@ -812,7 +824,7 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* 動的年度選択セレクトボックス（データが存在する年のみ表示） */}
+            {/* 動的年度選択セレクトボックス */}
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(e.target.value)}
@@ -860,11 +872,9 @@ export default function Home() {
                     </button>
                   )}
 
+                  {/* ユーザー設定ボタン（ハンドラー制御） */}
                   <button
-                    onClick={() => {
-                      setIsHeaderMenuOpen(false);
-                      setIsSettingsOpen(true);
-                    }}
+                    onClick={handleOpenSettings}
                     className="w-full text-left px-4 py-2.5 hover:bg-slate-100 font-semibold flex items-center gap-2"
                   >
                     <span>⚙️</span> ユーザー設定
