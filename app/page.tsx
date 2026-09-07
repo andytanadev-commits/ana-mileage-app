@@ -72,21 +72,25 @@ const getBaseLTMFromNames = (depName: string, arrName: string): number => {
   return 0;
 };
 
-const DOMESTIC_FARES = [
-  { label: '運賃1 (150%) - プレミアムFlex等', rate: 150, defaultBp: 400 },
-  { label: '運賃2 (125%) - プレミアム特割等', rate: 125, defaultBp: 400 },
-  { label: '運賃3 (100%) - ANA Flex等', rate: 100, defaultBp: 400 },
-  { label: '運賃4 (75%) - ANA Value / Super Value等', rate: 75, defaultBp: 0 },
-  { label: '運賃5 (50%) - Super Value Sale等', rate: 50, defaultBp: 0 },
+// Supabase取得失敗時のフォールバックデータ
+const FALLBACK_FARES = [
+  { id: 1, flight_type: 'domestic', fare_category: '運賃1', accumulation_rate: 150, boarding_points: 400, description: 'プレミアム運賃', display_order: 1 },
+  { id: 2, flight_type: 'domestic', fare_category: '運賃3', accumulation_rate: 100, boarding_points: 400, description: 'ANA FLEX', display_order: 3 },
+  { id: 3, flight_type: 'domestic', fare_category: '運賃5', accumulation_rate: 75, boarding_points: 400, description: 'ANA VALUE (1/3/7)', display_order: 5 },
+  { id: 4, flight_type: 'domestic', fare_category: '運賃6', accumulation_rate: 75, boarding_points: 0, description: 'ANA SUPER VALUE', display_order: 6 },
+  { id: 5, flight_type: 'international', fare_category: 'ビジネスクラス (C, D, Z)', accumulation_rate: 125, boarding_points: 400, description: 'ビジネスクラス スタンダード', display_order: 103 },
+  { id: 6, flight_type: 'international', fare_category: 'エコノミークラス (Y, B, M)', accumulation_rate: 100, boarding_points: 400, description: 'エコノミー フレックス', display_order: 106 },
 ];
 
-const INT_FARES = [
-  { label: 'ファースト/ビジネス F / A / J (150%)', rate: 150, defaultBp: 400 },
-  { label: 'ビジネスクラス C / D / Z (125%)', rate: 125, defaultBp: 400 },
-  { label: 'プレエコ / エコノミー G / E / Y / B / M (100%)', rate: 100, defaultBp: 400 },
-  { label: 'エコノミー U / H / Q (70%)', rate: 70, defaultBp: 0 },
-  { label: 'エコノミー V / W / S / L / K (50%)', rate: 50, defaultBp: 0 },
-];
+interface FareMaster {
+  id: number;
+  flight_type: 'domestic' | 'international';
+  fare_category: string;
+  accumulation_rate: number;
+  boarding_points: number;
+  description: string;
+  display_order: number;
+}
 
 interface Flight {
   id: string | number;
@@ -111,6 +115,10 @@ export default function Home() {
   const [authPassword, setAuthPassword] = useState<string>('');
   const [authMsg, setAuthMessage] = useState<string>('');
   const [authLoading, setAuthLoading] = useState<boolean>(false);
+
+  // 運賃マスタ状態（Supabaseから動的取得）
+  const [fareMasterList, setFareMasterList] = useState<FareMaster[]>(FALLBACK_FARES as FareMaster[]);
+  const [selectedFareId, setSelectedFareId] = useState<number | string>('');
 
   // ヘッダー3点ドットメニュー状態
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState<boolean>(false);
@@ -141,6 +149,37 @@ export default function Home() {
   const [feedbackContent, setFeedbackContent] = useState('');
   const [feedbackSending, setFeedbackSending] = useState(false);
 
+  // 入力フォーム状態
+  const [flightType, setFlightType] = useState<'domestic' | 'international'>('domestic');
+  const [airline, setAirline] = useState<'ana' | 'star'>('ana');
+  const [date, setDate] = useState('2026-01-15');
+  const [depAirport, setDepAirport] = useState('HND');
+  const [arrAirport, setArrAirport] = useState('OKA');
+  const [cost, setCost] = useState('');
+  const [accRate, setAccRate] = useState<number>(100);
+  const [boardPoints, setBoardPoints] = useState<number>(400);
+
+  const [calculatedPP, setCalculatedPP] = useState<number | null>(0);
+  const [calculatedMiles, setCalculatedMiles] = useState<number | null>(0);
+  const [calculatedLTM, setCalculatedLTM] = useState<number | null>(0);
+  const [routeError, setRouteError] = useState<string | null>(null);
+
+  const [editingId, setEditingId] = useState<string | number | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | number | null>(null);
+
+  // 運賃マスタの読み込み
+  const fetchFareMaster = async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .from('fare_master')
+      .select('*')
+      .order('display_order', { ascending: true });
+
+    if (data && !error && data.length > 0) {
+      setFareMasterList(data as FareMaster[]);
+    }
+  };
+
   // フィードバック送信処理
   const handleSendFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,10 +202,11 @@ export default function Home() {
     }
   };
 
-
   // 初期読み込み & 認証状態監視
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    fetchFareMaster();
 
     const savedStatus = localStorage.getItem('ana_user_status');
     if (savedStatus) setCurrentStatus(savedStatus);
@@ -193,7 +233,6 @@ export default function Home() {
     if (savedFlights) {
       setFlights(JSON.parse(savedFlights));
     } else {
-      // デフォルトのサンプルフライト（羽田ー那覇 往復、羽田ー伊丹 往復）
       setFlights([
         { id: 1, date: '2026-01-15', type: 'domestic', airline: 'ana', route: '羽田 - 那覇', cost: 24000, pp: 2860, miles: 1476, ltm: 984 },
         { id: 2, date: '2026-01-18', type: 'domestic', airline: 'ana', route: '那覇 - 羽田', cost: 24000, pp: 2860, miles: 1476, ltm: 984 },
@@ -313,6 +352,58 @@ export default function Home() {
     }
   }, [currentStatus, cardType, pastAnaLTM, pastStarLTM, flights, targetLTMInput, goalMode, selectedStatus, currentUser, mounted]);
 
+  // 種別（国内/国際）が切り替わった時に運賃プルダウンの初期値を自動セット
+  useEffect(() => {
+    if (!editingId) {
+      if (flightType === 'domestic') {
+        setDepAirport('HND'); setArrAirport('OKA');
+      } else {
+        setDepAirport('HND'); setArrAirport('BKK');
+      }
+
+      const availableFares = fareMasterList.filter(f => f.flight_type === flightType);
+      if (availableFares.length > 0) {
+        const firstFare = availableFares[0];
+        setSelectedFareId(firstFare.id);
+        setAccRate(firstFare.accumulation_rate);
+        setBoardPoints(firstFare.boarding_points);
+      }
+    }
+  }, [flightType, editingId, fareMasterList]);
+
+  // PP・マイル自動計算
+  useEffect(() => {
+    if (depAirport === arrAirport) {
+      setRouteError('出発空港と到着空港に同じ空港が選択されています。');
+      setCalculatedMiles(null); setCalculatedPP(null); setCalculatedLTM(null);
+      return;
+    }
+
+    const routeKey = `${depAirport}_${arrAirport}`;
+    const baseMile = ROUTE_MILES[routeKey];
+
+    if (!baseMile) {
+      const depName = DOMESTIC_AIRPORTS.find(a => a.code === depAirport)?.name || depAirport;
+      const arrName = (flightType === 'domestic' ? DOMESTIC_AIRPORTS : INT_AIRPORTS).find(a => a.code === arrAirport)?.name || arrAirport;
+      setRouteError(`「${depName} → ${arrName}」の直行便区間マイルデータが存在しないか非設定ルートです。`);
+      setCalculatedMiles(null); setCalculatedPP(null); setCalculatedLTM(null);
+      return;
+    }
+
+    setRouteError(null);
+    const miles = Math.floor(baseMile * (accRate / 100));
+    setCalculatedMiles(miles);
+    setCalculatedLTM(baseMile);
+
+    let multiplier = 1.0;
+    if (airline === 'ana') {
+      multiplier = flightType === 'domestic' ? 2.0 : (INT_AIRPORTS.find(a => a.code === arrAirport)?.region === 'asia' ? 1.5 : 1.0);
+    }
+
+    const pp = Math.floor(baseMile * (accRate / 100) * multiplier) + Number(boardPoints);
+    setCalculatedPP(pp);
+  }, [depAirport, arrAirport, accRate, boardPoints, flightType, airline]);
+
   const availableYears = Array.from(
     new Set([
       new Date().getFullYear().toString(),
@@ -320,7 +411,6 @@ export default function Home() {
     ])
   ).sort((a, b) => Number(b) - Number(a));
 
-  // ユーザー設定ボタンのハンドラー（未ログイン時は開かない）
   const handleOpenSettings = () => {
     setIsHeaderMenuOpen(false);
     if (!currentUser) {
@@ -396,66 +486,6 @@ export default function Home() {
       alert('ログアウトしました。');
     }
   };
-
-  // 入力フォーム状態
-  const [flightType, setFlightType] = useState<'domestic' | 'international'>('domestic');
-  const [airline, setAirline] = useState<'ana' | 'star'>('ana');
-  const [date, setDate] = useState('2026-01-15');
-  const [depAirport, setDepAirport] = useState('HND');
-  const [arrAirport, setArrAirport] = useState('OKA');
-  const [cost, setCost] = useState('');
-  const [accRate, setAccRate] = useState<number>(100);
-  const [boardPoints, setBoardPoints] = useState<number>(400);
-
-  const [calculatedPP, setCalculatedPP] = useState<number | null>(0);
-  const [calculatedMiles, setCalculatedMiles] = useState<number | null>(0);
-  const [calculatedLTM, setCalculatedLTM] = useState<number | null>(0);
-  const [routeError, setRouteError] = useState<string | null>(null);
-
-  const [editingId, setEditingId] = useState<string | number | null>(null);
-  const [openMenuId, setOpenMenuId] = useState<string | number | null>(null);
-
-  useEffect(() => {
-    if (!editingId) {
-      if (flightType === 'domestic') {
-        setDepAirport('HND'); setArrAirport('OKA'); setAccRate(100); setBoardPoints(400);
-      } else {
-        setDepAirport('HND'); setArrAirport('BKK'); setAccRate(100); setBoardPoints(400);
-      }
-    }
-  }, [flightType, editingId]);
-
-  useEffect(() => {
-    if (depAirport === arrAirport) {
-      setRouteError('出発空港と到着空港に同じ空港が選択されています。');
-      setCalculatedMiles(null); setCalculatedPP(null); setCalculatedLTM(null);
-      return;
-    }
-
-    const routeKey = `${depAirport}_${arrAirport}`;
-    const baseMile = ROUTE_MILES[routeKey];
-
-    if (!baseMile) {
-      const depName = DOMESTIC_AIRPORTS.find(a => a.code === depAirport)?.name || depAirport;
-      const arrName = (flightType === 'domestic' ? DOMESTIC_AIRPORTS : INT_AIRPORTS).find(a => a.code === arrAirport)?.name || arrAirport;
-      setRouteError(`「${depName} → ${arrName}」の直行便区間マイルデータが存在しないか非設定ルートです。`);
-      setCalculatedMiles(null); setCalculatedPP(null); setCalculatedLTM(null);
-      return;
-    }
-
-    setRouteError(null);
-    const miles = Math.floor(baseMile * (accRate / 100));
-    setCalculatedMiles(miles);
-    setCalculatedLTM(baseMile);
-
-    let multiplier = 1.0;
-    if (airline === 'ana') {
-      multiplier = flightType === 'domestic' ? 2.0 : (INT_AIRPORTS.find(a => a.code === arrAirport)?.region === 'asia' ? 1.5 : 1.0);
-    }
-
-    const pp = Math.floor(baseMile * (accRate / 100) * multiplier) + Number(boardPoints);
-    setCalculatedPP(pp);
-  }, [depAirport, arrAirport, accRate, boardPoints, flightType, airline]);
 
   const targetLTM = Number(targetLTMInput.replace(/,/g, '')) || 0;
 
@@ -834,6 +864,9 @@ export default function Home() {
     e.target.value = '';
   };
 
+  // 表示中の種別（国内線/国際線）に応じた運賃一覧
+  const currentFares = fareMasterList.filter(f => f.flight_type === flightType);
+
   return (
     <main className={`min-h-screen ${theme.appBg} p-6 max-w-5xl mx-auto font-sans transition-colors duration-500`}>
       {/* 隠しファイル入力（CSV用） */}
@@ -853,7 +886,6 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* 動的年度選択セレクトボックス */}
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(e.target.value)}
@@ -866,7 +898,6 @@ export default function Home() {
               ))}
             </select>
 
-            {/* 3点ドット メニューボタン */}
             <div className="relative">
               <button
                 onClick={() => setIsHeaderMenuOpen(!isHeaderMenuOpen)}
@@ -875,7 +906,6 @@ export default function Home() {
                 ⋮
               </button>
 
-              {/* ドロップダウンメニュー */}
               {isHeaderMenuOpen && (
                 <div className="absolute right-0 top-11 bg-white border border-slate-200 rounded-xl shadow-xl z-50 w-52 overflow-hidden text-slate-800 text-xs py-1">
                   {currentUser ? (
@@ -901,7 +931,6 @@ export default function Home() {
                     </button>
                   )}
 
-                  {/* ユーザー設定ボタン（ハンドラー制御） */}
                   <button
                     onClick={handleOpenSettings}
                     className="w-full text-left px-4 py-2.5 hover:bg-slate-100 font-semibold flex items-center gap-2"
@@ -939,7 +968,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Google ログインボタン */}
             <button
               onClick={handleGoogleLogin}
               disabled={authLoading}
@@ -960,7 +988,6 @@ export default function Home() {
               <div className="flex-grow border-t border-slate-200"></div>
             </div>
 
-            {/* ログイン / 新規登録 切り替えタブ */}
             <div className="flex bg-slate-100 p-1 rounded-xl">
               <button
                 type="button"
@@ -984,7 +1011,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* メール＆パスワード フォーム */}
             <form onSubmit={handleEmailPasswordAuth} className="space-y-3.5">
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">メールアドレス</label>
@@ -1319,26 +1345,30 @@ export default function Home() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/80 p-4 rounded-lg border border-slate-200">
           <div>
-            <label className="text-xs text-slate-500 font-medium">運賃種別 / 予約クラス（積算率）</label>
+            <label className="text-xs text-slate-500 font-medium">運賃種別 / 予約クラス（Supabase連動）</label>
             <select
-              value={accRate}
+              value={selectedFareId}
               onChange={(e) => {
-                const rate = Number(e.target.value);
-                setAccRate(rate);
-                const fareList = flightType === 'domestic' ? DOMESTIC_FARES : INT_FARES;
-                const found = fareList.find(f => f.rate === rate);
-                if (found) setBoardPoints(found.defaultBp);
+                const fareId = Number(e.target.value);
+                setSelectedFareId(fareId);
+                const found = fareMasterList.find(f => f.id === fareId);
+                if (found) {
+                  setAccRate(found.accumulation_rate);
+                  setBoardPoints(found.boarding_points);
+                }
               }}
-              className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-xs"
+              className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-xs font-medium"
             >
-              {(flightType === 'domestic' ? DOMESTIC_FARES : INT_FARES).map((f, i) => (
-                <option key={i} value={f.rate}>{f.label}</option>
+              {currentFares.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.fare_category} ({f.accumulation_rate}%) - {f.description}
+                </option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="text-xs text-slate-500 font-medium">搭乗ポイント</label>
+            <label className="text-xs text-slate-500 font-medium">搭乗ポイント（自動補正・手修正可）</label>
             <select value={boardPoints} onChange={(e) => setBoardPoints(Number(e.target.value))} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-xs">
               <option value={400}>400 ポイント</option>
               <option value={200}>200 ポイント</option>
@@ -1557,9 +1587,6 @@ export default function Home() {
         </div>
         <p>© 2026 ANA マイレージ＆PP管理 by AT Corporation LLC All Rights Reserved.</p>
       </footer>
-
-      {/* フィードバック用自作モーダル */}
-      {/* ...既存コード... */}
     </main>
   );
 }
