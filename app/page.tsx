@@ -1439,10 +1439,10 @@ export default function Home() {
       </div>
       {/* 画面右下のフィードバックボタン */}
       <a
-        href="https://your-org.featurebase.app" // ご自身のFeaturebaseのURL
+        href="https://your-org.featurebase.app"
         target="_blank"
         rel="noopener noreferrer"
-        className="fixed bottom-5 right-5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3.5 py-2.5 rounded-full shadow-lg border border-slate-700 flex items-center gap-1.5 z-40 transition hover:scale-105"
+        className="fixed bottom-5 right-5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3.5 py-2.5 rounded-full shadow-lg border border-slate-700 flex items-center gap-1.5 z-50 transition hover:scale-105"
       >
         <span>💬</span> ご要望・改善案
       </a>
