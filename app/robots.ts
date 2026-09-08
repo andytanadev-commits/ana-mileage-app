@@ -6,6 +6,6 @@ export default function robots(): MetadataRoute.Robots {
       userAgent: '*',
       allow: '/',
     },
-    sitemap: 'https://ana-mileage-app.vercel.app//sitemap.xml', // ★本番のURLに変更
+    sitemap: 'https://ana-mileage-app.vercel.app/sitemap.xml',
   };
 }

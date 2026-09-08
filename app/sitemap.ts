@@ -1,7 +1,8 @@
 import { MetadataRoute } from 'next';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = 'https://ana-mileage-app.vercel.app/'; // ★本番のURLに変更
+  // 末尾の「/」を消して記述します
+  const baseUrl = 'https://ana-mileage-app.vercel.app';
 
   return [
     {
