@@ -114,6 +114,7 @@ interface Flight {
 
 export default function Home() {
   const [mounted, setMounted] = useState<boolean>(false);
+  const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false); // 読み込み完了フラグ
 
   // 認証状態
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -128,7 +129,7 @@ export default function Home() {
   const [fareMasterList, setFareMasterList] = useState<FareMaster[]>(FALLBACK_FARES as FareMaster[]);
   const [selectedFareId, setSelectedFareId] = useState<number | string>('');
 
-  // ヘッダー＆ドロップダウンメニュー用 Ref (モーダル外クリック検知)
+  // ヘッダー＆ドロップダウンメニュー用 Ref
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState<boolean>(false);
   const headerMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -158,13 +159,13 @@ export default function Home() {
   const [feedbackContent, setFeedbackContent] = useState('');
   const [feedbackSending, setFeedbackSending] = useState(false);
 
-  // 入力フォーム状態（デフォルト搭乗日を「本日」に設定）
+  // 入力フォーム状態
   const [flightType, setFlightType] = useState<'domestic' | 'international'>('domestic');
   const [airline, setAirline] = useState<'ana' | 'star'>('ana');
   const [date, setDate] = useState<string>(getTodayDateString());
   const [depAirport, setDepAirport] = useState('HND');
   const [arrAirport, setArrAirport] = useState('OKA');
-  const [cost, setCost] = useState(''); // 任意入力
+  const [cost, setCost] = useState('');
   const [accRate, setAccRate] = useState<number>(100);
   const [boardPoints, setBoardPoints] = useState<number>(400);
 
@@ -228,6 +229,36 @@ export default function Home() {
 
     fetchFareMaster();
 
+    if (supabase) {
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user) {
+          setCurrentUser(user);
+          loadCloudData(user);
+        } else {
+          loadLocalStorageData();
+        }
+      });
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const user = session?.user || null;
+        setCurrentUser(user);
+        if (user) {
+          loadCloudData(user);
+        } else {
+          loadLocalStorageData();
+        }
+      });
+
+      setMounted(true);
+      return () => subscription.unsubscribe();
+    } else {
+      loadLocalStorageData();
+      setMounted(true);
+    }
+  }, []);
+
+  // ローカルストレージからの読み込み
+  const loadLocalStorageData = () => {
     const savedStatus = localStorage.getItem('ana_user_status');
     if (savedStatus) setCurrentStatus(savedStatus);
 
@@ -258,30 +289,10 @@ export default function Home() {
         { id: 2, date: getTodayDateString(), type: 'domestic', airline: 'ana', route: '那覇 - 羽田', cost: 24000, pp: 2860, miles: 1476, ltm: 984 },
       ]);
     }
+    setIsDataLoaded(true);
+  };
 
-    setMounted(true);
-
-    if (supabase) {
-      supabase.auth.getUser().then(({ data: { user } }) => {
-        if (user) {
-          setCurrentUser(user);
-          loadCloudData(user);
-        }
-      });
-
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        const user = session?.user || null;
-        setCurrentUser(user);
-        if (user) {
-          loadCloudData(user);
-        }
-      });
-
-      return () => subscription.unsubscribe();
-    }
-  }, []);
-
-  // クラウドデータのロード（削除追従修正済み）
+  // クラウドデータのロード
   const loadCloudData = async (user: User) => {
     if (!supabase) return;
 
@@ -289,16 +300,27 @@ export default function Home() {
       .from('profiles')
       .select('*')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
     if (profile) {
-      setCurrentStatus(profile.current_status || 'none');
-      setCardType(profile.card_type || 'general');
-      setPastAnaLTM(profile.past_ana_ltm || 0);
-      setPastStarLTM(profile.past_star_ltm || 0);
-      setSelectedStatus(profile.target_status || 'platinum');
-      setGoalMode(profile.goal_mode || 'flight');
-      setTargetLTMInput(profile.target_ltm || '1,000,000');
+      if (profile.current_status) setCurrentStatus(profile.current_status);
+      if (profile.card_type) setCardType(profile.card_type);
+      if (profile.past_ana_ltm !== undefined) setPastAnaLTM(profile.past_ana_ltm);
+      if (profile.past_star_ltm !== undefined) setPastStarLTM(profile.past_star_ltm);
+      if (profile.target_status) setSelectedStatus(profile.target_status);
+      if (profile.goal_mode) setGoalMode(profile.goal_mode);
+      if (profile.target_ltm) setTargetLTMInput(profile.target_ltm);
+    } else {
+      await supabase.from('profiles').upsert({
+        id: user.id,
+        current_status: currentStatus,
+        card_type: cardType,
+        past_ana_ltm: pastAnaLTM,
+        past_star_ltm: pastStarLTM,
+        target_status: selectedStatus,
+        goal_mode: goalMode,
+        target_ltm: targetLTMInput,
+      });
     }
 
     const { data: dbFlights } = await supabase
@@ -307,7 +329,6 @@ export default function Home() {
       .eq('user_id', user.id)
       .order('flight_date', { ascending: false });
 
-    // DB側にデータが存在する場合は、たとえ0件（全削除後）であってもDBの状態を正として同期
     if (dbFlights !== null) {
       const formattedFlights: Flight[] = dbFlights.map(f => ({
         id: f.id,
@@ -322,10 +343,14 @@ export default function Home() {
       }));
       setFlights(formattedFlights);
     }
+
+    setIsDataLoaded(true); // 読み込み完了
   };
 
+  // 設定変更時の自動保存（読み込み完了後のみ実行）
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || !isDataLoaded) return;
+
     if (!currentUser) {
       localStorage.setItem('ana_user_status', currentStatus);
       localStorage.setItem('ana_user_card', cardType);
@@ -347,7 +372,7 @@ export default function Home() {
         target_ltm: targetLTMInput,
       }).then();
     }
-  }, [currentStatus, cardType, pastAnaLTM, pastStarLTM, flights, targetLTMInput, goalMode, selectedStatus, currentUser, mounted]);
+  }, [currentStatus, cardType, pastAnaLTM, pastStarLTM, flights, targetLTMInput, goalMode, selectedStatus, currentUser, mounted, isDataLoaded]);
 
   // 種別切り替え時に運賃初期値をセット
   useEffect(() => {
@@ -610,13 +635,13 @@ export default function Home() {
     return `${depName} - ${arrName}`;
   };
 
-  // フライト保存処理（支払金額任意化）
+  // フライト保存処理
   const handleSaveFlight = async (e: React.FormEvent) => {
     e.preventDefault();
     if (routeError || calculatedPP === null || calculatedMiles === null || calculatedLTM === null) return;
 
     const routeLabel = getRouteLabel();
-    const flightCost = cost ? Number(cost) : 0; // 空白時は 0 円として登録
+    const flightCost = cost ? Number(cost) : 0;
 
     if (currentUser && supabase) {
       if (editingId) {
@@ -689,7 +714,7 @@ export default function Home() {
     setOpenMenuId(null);
   };
 
-  // 削除処理（Supabase側も確実に削除）
+  // 削除処理
   const handleDelete = async (id: string | number) => {
     if (currentUser && supabase) {
       const { error } = await supabase.from('flights').delete().eq('id', id).eq('user_id', currentUser.id);
@@ -902,7 +927,6 @@ export default function Home() {
               ))}
             </select>
 
-            {/* 3点ドットメニュー（ref追加） */}
             <div className="relative" ref={headerMenuRef}>
               <button
                 onClick={() => setIsHeaderMenuOpen(!isHeaderMenuOpen)}
@@ -1238,7 +1262,7 @@ export default function Home() {
             <p className="text-xs text-slate-300">ゴールド以上のカードなら搭乗ボーナスマイル25%〜UP。修行中の効率が大幅に向上します。</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 w-full md:w-auto">
-            <a href="https://www.ana.co.jp/ja/jp/amc/anacard/" target="_blank" rel="noopener noreferrer" className="flex-1 md:flex-none text-center bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-lg transition">ANAゴールドを発行 💳</a>
+            <a href="https://your-affiliate-link-gold.com" target="_blank" rel="noopener noreferrer" className="flex-1 md:flex-none text-center bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-lg transition">ANAゴールドを発行 💳</a>
           </div>
         </div>
       </div>
