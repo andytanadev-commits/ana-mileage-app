@@ -41,6 +41,8 @@ interface Airport {
   country: string;
   region: string;
   is_domestic: boolean;
+  is_major?: boolean;
+  search_keywords?: string;
   display_order: number;
 }
 
@@ -60,6 +62,139 @@ interface Flight {
   pp: number;
   miles: number;
   ltm: number;
+}
+
+// -----------------------------------------------------
+// 検索機能付き空港選択コンポーネント (AirportSelect)
+// -----------------------------------------------------
+function AirportSelect({
+  label,
+  value,
+  onChange,
+  airportList,
+  isDomesticOnly,
+  disabled
+}: {
+  label: string;
+  value: string;
+  onChange: (code: string) => void;
+  airportList: Airport[];
+  isDomesticOnly: boolean;
+  disabled?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedAirport = airportList.find(a => a.code === value);
+
+  // 外側クリックでドロップダウンを閉じる
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // 種別（国内/国際）で絞り込み
+  const targetAirports = airportList.filter(a => isDomesticOnly ? a.region === 'japan' : true);
+
+  // 検索クエリによる絞り込み
+  const isSearching = query.trim().length > 0;
+  const filteredAirports = isSearching
+    ? targetAirports.filter(a => {
+        const q = query.toLowerCase().trim();
+        const codeMatch = a.code.toLowerCase().includes(q);
+        const nameMatch = a.name.toLowerCase().includes(q);
+        const countryMatch = a.country.toLowerCase().includes(q);
+        const keywordMatch = a.search_keywords ? a.search_keywords.toLowerCase().includes(q) : false;
+        return codeMatch || nameMatch || countryMatch || keywordMatch;
+      })
+    : targetAirports.filter(a => a.is_major); // 未検索時は主要空港のみ表示
+
+  const renderGroup = (regionKey: string, regionName: string) => {
+    const groupItems = filteredAirports.filter(a => a.region === regionKey);
+    if (groupItems.length === 0) return null;
+
+    return (
+      <div key={regionKey} className="mb-2">
+        <div className="px-3 py-1 text-[11px] font-bold text-slate-400 bg-slate-100/80 rounded mb-1">
+          {regionName}
+        </div>
+        {groupItems.map(a => (
+          <button
+            key={a.code}
+            type="button"
+            onClick={() => {
+              onChange(a.code);
+              setIsOpen(false);
+              setQuery('');
+            }}
+            className={`w-full text-left px-3 py-2 text-xs rounded-lg flex items-center justify-between transition ${
+              a.code === value ? 'bg-blue-50 font-bold text-blue-700' : 'hover:bg-slate-100 text-slate-700'
+            }`}
+          >
+            <span>{a.name} <span className="text-slate-400 font-normal">({a.code})</span></span>
+            {a.is_major && <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-medium">主要</span>}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <label className="text-xs text-slate-500 font-medium block mb-1">{label}</label>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full border p-2 rounded-lg text-slate-800 bg-white text-sm text-left flex justify-between items-center shadow-sm disabled:bg-slate-100 disabled:cursor-not-allowed"
+      >
+        <span className="truncate">
+          {selectedAirport ? `${selectedAirport.name} (${selectedAirport.code})` : '選択してください'}
+        </span>
+        <span className="text-slate-400 text-xs">▼</span>
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full mt-1 w-72 bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-2 space-y-2 max-h-80 overflow-y-auto">
+          <input
+            type="text"
+            placeholder="🔍 空港名・3レターコードで検索..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full border p-2 rounded-lg text-xs bg-slate-50 focus:bg-white focus:outline-blue-500 text-slate-800"
+            autoFocus
+          />
+
+          {!isSearching && (
+            <p className="text-[10px] text-slate-400 px-2">※主要空港を表示中。コードや都市名で全空港検索できます。</p>
+          )}
+
+          <div className="divide-y divide-slate-100">
+            {filteredAirports.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-4">該当する空港が見つかりません</p>
+            ) : (
+              <>
+                {renderGroup('japan', '🇯🇵 日本')}
+                {!isDomesticOnly && (
+                  <>
+                    {renderGroup('asia', '🌏 アジア')}
+                    {renderGroup('oceania', '🐨 オセアニア')}
+                    {renderGroup('other', '🌎 欧米・その他')}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Home() {
@@ -90,8 +225,8 @@ export default function Home() {
   const [currentStatus, setCurrentStatus] = useState<string>('none');
   const [cardType, setCardType] = useState<string>('general');
   const [pastAnaLTM, setPastAnaLTM] = useState<number>(0);
-  const [pastStarLTM, setPastStarLTM] = useState<number>(0); // ※「総LTM（ANA＋他社便）」として利用
-  const [ltmBaseDate, setLtmBaseDate] = useState<string>(getTodayDateString()); // LTM基準日
+  const [pastStarLTM, setPastStarLTM] = useState<number>(0);
+  const [ltmBaseDate, setLtmBaseDate] = useState<string>(getTodayDateString());
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   // 目標設定状態
@@ -525,17 +660,12 @@ export default function Home() {
   const totalPP = anaPP + starPP;
   const avgPpUnitCost = totalPP > 0 ? (totalCost / totalPP).toFixed(2) : '0';
 
-  // -----------------------------------------------------
   // LTM計算ロジック（基準日より未来のフライトのみ合算）
-  // -----------------------------------------------------
   const futureFlights = flights.filter(f => f.date > ltmBaseDate);
   const futureAnaLTM = futureFlights.filter(f => f.airline === 'ana').reduce((sum, f) => sum + f.ltm, 0);
   const futureStarLTM = futureFlights.filter(f => f.airline === 'star').reduce((sum, f) => sum + f.ltm, 0);
 
-  // ANA便のみLTM ＝ 設定画面の「ANA便LTM」＋ 基準日より後のANA便マイル
   const currentAnaLTM = pastAnaLTM + futureAnaLTM;
-
-  // 総LTM (他社便含む) ＝ 設定画面の「総LTM」＋ 基準日より後の全便マイル (ANA便＋他社便)
   const currentTotalLTM = pastStarLTM + futureAnaLTM + futureStarLTM;
 
   const targetLTM = Number(targetLTMInput.replace(/,/g, '')) || 0;
@@ -562,37 +692,6 @@ export default function Home() {
   };
   const theme = STATUS_THEMES[currentStatus] || STATUS_THEMES.none;
   const CARD_NAMES: Record<string, string> = { none: 'カードなし', general: 'ANA一般カード', gold: 'ANAゴールドカード', premium: 'ANAカード プレミアム' };
-
-  // 空港プルダウン 国内/国際の出し分け
-  const renderAirportOptions = (isDomestic: boolean) => {
-    const jpAirports = airportList.filter(a => a.region === 'japan');
-    if (isDomestic) {
-      return (
-        <optgroup label="🇯🇵 日本">
-          {jpAirports.map(a => <option key={a.code} value={a.code}>{a.name} ({a.code})</option>)}
-        </optgroup>
-      );
-    }
-    const asiaAirports = airportList.filter(a => a.region === 'asia');
-    const oceaniaAirports = airportList.filter(a => a.region === 'oceania');
-    const otherAirports = airportList.filter(a => a.region === 'other');
-    return (
-      <>
-        <optgroup label="🇯🇵 日本">
-          {jpAirports.map(a => <option key={a.code} value={a.code}>{a.name} ({a.code})</option>)}
-        </optgroup>
-        <optgroup label="🌏 アジア">
-          {asiaAirports.map(a => <option key={a.code} value={a.code}>{a.name} ({a.code})</option>)}
-        </optgroup>
-        <optgroup label="🐨 オセアニア">
-          {oceaniaAirports.map(a => <option key={a.code} value={a.code}>{a.name} ({a.code})</option>)}
-        </optgroup>
-        <optgroup label="🌎 欧米・その他">
-          {otherAirports.map(a => <option key={a.code} value={a.code}>{a.name} ({a.code})</option>)}
-        </optgroup>
-      </>
-    );
-  };
 
   return (
     <main className={`min-h-screen ${theme.appBg} p-6 max-w-5xl mx-auto font-sans transition-colors duration-500`}>
@@ -861,8 +960,25 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             <div><label className="text-xs text-slate-500 font-medium">搭乗日</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} disabled={!currentUser} className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm bg-white" /></div>
             <div><label className="text-xs text-slate-500 font-medium">運航会社</label><select value={airline} onChange={(e) => setAirline(e.target.value as 'ana' | 'star')} disabled={!currentUser} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm"><option value="ana">ANAグループ便</option><option value="star">他社便（スター等）</option></select></div>
-            <div><label className="text-xs text-slate-500 font-medium">出発地</label><select value={depAirport} onChange={(e) => setDepAirport(e.target.value)} disabled={!currentUser} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm">{renderAirportOptions(flightType === 'domestic')}</select></div>
-            <div><label className="text-xs text-slate-500 font-medium">到着地</label><select value={arrAirport} onChange={(e) => setArrAirport(e.target.value)} disabled={!currentUser} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm">{renderAirportOptions(flightType === 'domestic')}</select></div>
+            
+            <AirportSelect
+              label="出発地"
+              value={depAirport}
+              onChange={(code) => setDepAirport(code)}
+              airportList={airportList}
+              isDomesticOnly={flightType === 'domestic'}
+              disabled={!currentUser}
+            />
+
+            <AirportSelect
+              label="到着地"
+              value={arrAirport}
+              onChange={(code) => setArrAirport(code)}
+              airportList={airportList}
+              isDomesticOnly={flightType === 'domestic'}
+              disabled={!currentUser}
+            />
+
             <div><label className="text-xs text-slate-500 font-medium">支払金額 (円) <span className="text-[10px] text-slate-400">※任意</span></label><input type="number" placeholder="未入力可" value={cost} onChange={(e) => setCost(e.target.value)} disabled={!currentUser} className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm bg-white" /></div>
           </div>
 
