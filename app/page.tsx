@@ -90,7 +90,8 @@ export default function Home() {
   const [currentStatus, setCurrentStatus] = useState<string>('none');
   const [cardType, setCardType] = useState<string>('general');
   const [pastAnaLTM, setPastAnaLTM] = useState<number>(0);
-  const [pastStarLTM, setPastStarLTM] = useState<number>(0);
+  const [pastStarLTM, setPastStarLTM] = useState<number>(0); // ※「総LTM（ANA＋他社便）」として利用
+  const [ltmBaseDate, setLtmBaseDate] = useState<string>(getTodayDateString()); // LTM基準日
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   // 目標設定状態
@@ -182,25 +183,25 @@ export default function Home() {
     }
   }, []);
 
-  // 未ログイン・ログアウト時の初期化＆データクリア
   const setInitialEmptyState = () => {
     setCurrentStatus('none');
     setCardType('general');
     setPastAnaLTM(0);
     setPastStarLTM(0);
+    setLtmBaseDate(getTodayDateString());
     setGoalMode('flight');
     setSelectedStatus('platinum');
     setTargetLTMInput('1,000,000');
     setFlights([]);
     setIsDataLoaded(true);
 
-    // 移行措置：ローカルストレージに残っている古いデータを削除
     if (typeof window !== 'undefined') {
       localStorage.removeItem('ana_flights');
       localStorage.removeItem('ana_user_status');
       localStorage.removeItem('ana_user_card');
       localStorage.removeItem('ana_past_ana_ltm');
       localStorage.removeItem('ana_past_star_ltm');
+      localStorage.removeItem('ana_ltm_base_date');
       localStorage.removeItem('ana_goal_mode');
       localStorage.removeItem('ana_selected_status');
       localStorage.removeItem('ana_target_ltm');
@@ -216,6 +217,7 @@ export default function Home() {
       if (profile.card_type) setCardType(profile.card_type);
       if (profile.past_ana_ltm !== undefined) setPastAnaLTM(profile.past_ana_ltm);
       if (profile.past_star_ltm !== undefined) setPastStarLTM(profile.past_star_ltm);
+      if (profile.ltm_base_date) setLtmBaseDate(profile.ltm_base_date);
       if (profile.target_status) setSelectedStatus(profile.target_status);
       if (profile.goal_mode) setGoalMode(profile.goal_mode);
       if (profile.target_ltm) setTargetLTMInput(profile.target_ltm);
@@ -231,15 +233,22 @@ export default function Home() {
     setIsDataLoaded(true);
   };
 
-  // 設定の自動保存（ログイン時のみ）
   useEffect(() => {
     if (!mounted || !isDataLoaded) return;
     if (currentUser && supabase) {
       supabase.from('profiles').upsert({
-        id: currentUser.id, current_status: currentStatus, card_type: cardType, past_ana_ltm: pastAnaLTM, past_star_ltm: pastStarLTM, target_status: selectedStatus, goal_mode: goalMode, target_ltm: targetLTMInput,
+        id: currentUser.id,
+        current_status: currentStatus,
+        card_type: cardType,
+        past_ana_ltm: pastAnaLTM,
+        past_star_ltm: pastStarLTM,
+        ltm_base_date: ltmBaseDate,
+        target_status: selectedStatus,
+        goal_mode: goalMode,
+        target_ltm: targetLTMInput,
       }).then();
     }
-  }, [currentStatus, cardType, pastAnaLTM, pastStarLTM, flights, targetLTMInput, goalMode, selectedStatus, currentUser, mounted, isDataLoaded]);
+  }, [currentStatus, cardType, pastAnaLTM, pastStarLTM, ltmBaseDate, flights, targetLTMInput, goalMode, selectedStatus, currentUser, mounted, isDataLoaded]);
 
   useEffect(() => {
     if (!editingId) {
@@ -516,10 +525,21 @@ export default function Home() {
   const totalPP = anaPP + starPP;
   const avgPpUnitCost = totalPP > 0 ? (totalCost / totalPP).toFixed(2) : '0';
 
-  const currentAnaLTM = pastAnaLTM + flights.filter(f => f.airline === 'ana').reduce((sum, f) => sum + f.ltm, 0);
-  const currentStarLTM = pastStarLTM + flights.filter(f => f.airline === 'star').reduce((sum, f) => sum + f.ltm, 0);
+  // -----------------------------------------------------
+  // LTM計算ロジック（基準日より未来のフライトのみ合算）
+  // -----------------------------------------------------
+  const futureFlights = flights.filter(f => f.date > ltmBaseDate);
+  const futureAnaLTM = futureFlights.filter(f => f.airline === 'ana').reduce((sum, f) => sum + f.ltm, 0);
+  const futureStarLTM = futureFlights.filter(f => f.airline === 'star').reduce((sum, f) => sum + f.ltm, 0);
+
+  // ANA便のみLTM ＝ 設定画面の「ANA便LTM」＋ 基準日より後のANA便マイル
+  const currentAnaLTM = pastAnaLTM + futureAnaLTM;
+
+  // 総LTM (他社便含む) ＝ 設定画面の「総LTM」＋ 基準日より後の全便マイル (ANA便＋他社便)
+  const currentTotalLTM = pastStarLTM + futureAnaLTM + futureStarLTM;
+
   const targetLTM = Number(targetLTMInput.replace(/,/g, '')) || 0;
-  const targetLTMCurrent = ltmMode === 'ana' ? currentAnaLTM : currentAnaLTM + currentStarLTM;
+  const targetLTMCurrent = ltmMode === 'ana' ? currentAnaLTM : currentTotalLTM;
   const remainingLTM = Math.max(0, targetLTM - targetLTMCurrent);
   const nahaTripsNeeded = Math.ceil(remainingLTM / (984 * 2));
 
@@ -667,14 +687,42 @@ export default function Home() {
                   <option value="premium">ANAカード プレミアム</option>
                 </select>
               </div>
-              <div className="border-t pt-4 grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-600 block">過去ANA便LTM</label>
-                  <input type="number" value={pastAnaLTM} onChange={(e) => setPastAnaLTM(Number(e.target.value) || 0)} className="border p-2 rounded-lg text-slate-800 w-full text-sm" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-600 block">過去他社便LTM</label>
-                  <input type="number" value={pastStarLTM} onChange={(e) => setPastStarLTM(Number(e.target.value) || 0)} className="border p-2 rounded-lg text-slate-800 w-full text-sm" />
+
+              <div className="border-t pt-4">
+                <p className="text-xs font-bold text-slate-800 mb-1">✈️ 累積LTMの初期値設定</p>
+                <p className="text-[11px] text-slate-500 mb-3">※ANAマイページに表示されているLTM数値と確認日を入力してください。確認日以降の搭乗分のみフライト履歴から加算されます。</p>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 block">LTM確認基準日</label>
+                    <input
+                      type="date"
+                      value={ltmBaseDate}
+                      onChange={(e) => setLtmBaseDate(e.target.value)}
+                      className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm bg-slate-50"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-600 block">基準時点のANA便LTM</label>
+                      <input
+                        type="number"
+                        value={pastAnaLTM}
+                        onChange={(e) => setPastAnaLTM(Number(e.target.value) || 0)}
+                        className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-600 block">基準時点の総LTM (ANA＋他社便)</label>
+                      <input
+                        type="number"
+                        value={pastStarLTM}
+                        onChange={(e) => setPastStarLTM(Number(e.target.value) || 0)}
+                        className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -775,7 +823,7 @@ export default function Home() {
             <div>
               <p className="text-xs text-slate-400">現在の累計 LTM ({ltmMode === 'ana' ? 'ANAグループ便のみ' : '総計'})</p>
               <p className="text-2xl font-bold text-sky-400">{targetLTMCurrent.toLocaleString()} マイル</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">(手入力過去分 ＋ ログ合算 - ANA: {currentAnaLTM.toLocaleString()} M / 他社: {currentStarLTM.toLocaleString()} M)</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">(基準日 {ltmBaseDate} 以降の未反映フライト分を加算中)</p>
             </div>
             <div>
               <p className="text-xs text-slate-400">目標 LTM</p>
