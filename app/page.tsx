@@ -105,7 +105,7 @@ export default function Home() {
 
   const [flights, setFlights] = useState<Flight[]>([]);
 
-  // フィードバック自作モーダル状態
+  // フィードバックモーダル状態
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [feedbackType, setFeedbackType] = useState('bug');
   const [feedbackContent, setFeedbackContent] = useState('');
@@ -139,16 +139,12 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // マスタデータ取得 (運賃・空港・路線)
   const fetchMasterData = async () => {
     if (!supabase) return;
-
     const { data: fares } = await supabase.from('fare_master').select('*').order('display_order', { ascending: true });
     if (fares) setFareMasterList(fares as FareMaster[]);
-
     const { data: airports } = await supabase.from('airports').select('*').order('display_order', { ascending: true });
     if (airports) setAirportList(airports as Airport[]);
-
     const { data: routes } = await supabase.from('routes').select('*');
     if (routes) setRouteList(routes as RouteInfo[]);
   };
@@ -164,7 +160,7 @@ export default function Home() {
           setCurrentUser(user);
           loadCloudData(user);
         } else {
-          loadLocalStorageData();
+          setInitialEmptyState();
         }
       });
 
@@ -174,41 +170,41 @@ export default function Home() {
         if (user) {
           loadCloudData(user);
         } else {
-          loadLocalStorageData();
+          setInitialEmptyState();
         }
       });
 
       setMounted(true);
       return () => subscription.unsubscribe();
     } else {
-      loadLocalStorageData();
+      setInitialEmptyState();
       setMounted(true);
     }
   }, []);
 
-  const loadLocalStorageData = () => {
-    const savedStatus = localStorage.getItem('ana_user_status');
-    if (savedStatus) setCurrentStatus(savedStatus);
-    const savedCard = localStorage.getItem('ana_user_card');
-    if (savedCard) setCardType(savedCard);
-    const savedPastAna = localStorage.getItem('ana_past_ana_ltm');
-    if (savedPastAna) setPastAnaLTM(Number(savedPastAna));
-    const savedPastStar = localStorage.getItem('ana_past_star_ltm');
-    if (savedPastStar) setPastStarLTM(Number(savedPastStar));
-    const savedGoalMode = localStorage.getItem('ana_goal_mode');
-    if (savedGoalMode) setGoalMode(savedGoalMode as 'flight' | 'life');
-    const savedSelectedStatus = localStorage.getItem('ana_selected_status');
-    if (savedSelectedStatus) setSelectedStatus(savedSelectedStatus);
-    const savedTargetLTM = localStorage.getItem('ana_target_ltm');
-    if (savedTargetLTM) setTargetLTMInput(savedTargetLTM);
-
-    const savedFlights = localStorage.getItem('ana_flights');
-    if (savedFlights) {
-      setFlights(JSON.parse(savedFlights));
-    } else {
-      setFlights([]);
-    }
+  // 未ログイン・ログアウト時の初期化＆データクリア
+  const setInitialEmptyState = () => {
+    setCurrentStatus('none');
+    setCardType('general');
+    setPastAnaLTM(0);
+    setPastStarLTM(0);
+    setGoalMode('flight');
+    setSelectedStatus('platinum');
+    setTargetLTMInput('1,000,000');
+    setFlights([]);
     setIsDataLoaded(true);
+
+    // 移行措置：ローカルストレージに残っている古いデータを削除
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('ana_flights');
+      localStorage.removeItem('ana_user_status');
+      localStorage.removeItem('ana_user_card');
+      localStorage.removeItem('ana_past_ana_ltm');
+      localStorage.removeItem('ana_past_star_ltm');
+      localStorage.removeItem('ana_goal_mode');
+      localStorage.removeItem('ana_selected_status');
+      localStorage.removeItem('ana_target_ltm');
+    }
   };
 
   const loadCloudData = async (user: User) => {
@@ -235,18 +231,10 @@ export default function Home() {
     setIsDataLoaded(true);
   };
 
+  // 設定の自動保存（ログイン時のみ）
   useEffect(() => {
     if (!mounted || !isDataLoaded) return;
-    if (!currentUser) {
-      localStorage.setItem('ana_user_status', currentStatus);
-      localStorage.setItem('ana_user_card', cardType);
-      localStorage.setItem('ana_past_ana_ltm', pastAnaLTM.toString());
-      localStorage.setItem('ana_past_star_ltm', pastStarLTM.toString());
-      localStorage.setItem('ana_flights', JSON.stringify(flights));
-      localStorage.setItem('ana_target_ltm', targetLTMInput);
-      localStorage.setItem('ana_goal_mode', goalMode);
-      localStorage.setItem('ana_selected_status', selectedStatus);
-    } else if (supabase) {
+    if (currentUser && supabase) {
       supabase.from('profiles').upsert({
         id: currentUser.id, current_status: currentStatus, card_type: cardType, past_ana_ltm: pastAnaLTM, past_star_ltm: pastStarLTM, target_status: selectedStatus, goal_mode: goalMode, target_ltm: targetLTMInput,
       }).then();
@@ -260,7 +248,6 @@ export default function Home() {
       } else {
         setDepAirport('HND'); setArrAirport('BKK');
       }
-
       const availableFares = fareMasterList.filter(f => f.flight_type === flightType);
       if (availableFares.length > 0) {
         const firstFare = availableFares[0];
@@ -354,7 +341,7 @@ export default function Home() {
       await supabase.auth.signOut();
       setCurrentUser(null);
       setIsHeaderMenuOpen(false);
-      loadLocalStorageData();
+      setInitialEmptyState();
       alert('ログアウトしました。');
     }
   };
@@ -383,13 +370,6 @@ export default function Home() {
           user_id: currentUser.id, flight_date: date, type: flightType, airline, route: routeLabel, cost: flightCost, pp: calculatedPP, miles: calculatedMiles, ltm: calculatedLTM
         }).select().single();
         if (data) setFlights([{ id: data.id, date, type: flightType, airline, route: routeLabel, cost: flightCost, pp: calculatedPP, miles: calculatedMiles, ltm: calculatedLTM }, ...flights]);
-      }
-    } else {
-      if (editingId) {
-        setFlights(flights.map(f => f.id === editingId ? { ...f, date, type: flightType, airline, route: routeLabel, cost: flightCost, pp: calculatedPP, miles: calculatedMiles, ltm: calculatedLTM } : f));
-        setEditingId(null);
-      } else {
-        setFlights([{ id: Date.now(), date, type: flightType, airline, route: routeLabel, cost: flightCost, pp: calculatedPP, miles: calculatedMiles, ltm: calculatedLTM }, ...flights]);
       }
     }
     setCost('');
@@ -563,12 +543,19 @@ export default function Home() {
   const theme = STATUS_THEMES[currentStatus] || STATUS_THEMES.none;
   const CARD_NAMES: Record<string, string> = { none: 'カードなし', general: 'ANA一般カード', gold: 'ANAゴールドカード', premium: 'ANAカード プレミアム' };
 
-  const renderAirportOptions = () => {
+  // 空港プルダウン 国内/国際の出し分け
+  const renderAirportOptions = (isDomestic: boolean) => {
     const jpAirports = airportList.filter(a => a.region === 'japan');
+    if (isDomestic) {
+      return (
+        <optgroup label="🇯🇵 日本">
+          {jpAirports.map(a => <option key={a.code} value={a.code}>{a.name} ({a.code})</option>)}
+        </optgroup>
+      );
+    }
     const asiaAirports = airportList.filter(a => a.region === 'asia');
     const oceaniaAirports = airportList.filter(a => a.region === 'oceania');
     const otherAirports = airportList.filter(a => a.region === 'other');
-
     return (
       <>
         <optgroup label="🇯🇵 日本">
@@ -762,165 +749,188 @@ export default function Home() {
             <p className="text-xs text-slate-300">ゴールド以上のカードなら搭乗ボーナスマイル25%〜UP。修行中の効率が大幅に向上します。</p>
           </div>
           <div className="flex items-center gap-2 flex-shrink-0 w-full md:w-auto">
-            <a href="https://your-affiliate-link-gold.com" target="_blank" rel="noopener noreferrer" className="flex-1 md:flex-none text-center bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-lg transition">ANAゴールドを発行 💳</a>
+            <a href="https://www.ana.co.jp/ja/jp/amc/anacard/" target="_blank" rel="noopener noreferrer" className="flex-1 md:flex-none text-center bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-4 py-2.5 rounded-lg transition">ANAゴールドを発行 💳</a>
           </div>
         </div>
       </div>
 
-      {/* LTMシミュレーション */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-850 to-slate-800 text-white p-6 rounded-xl shadow-md mb-8">
-        <div className="flex justify-between items-center mb-2">
-          <h2 className="text-lg font-bold flex items-center gap-2">✈️ LTM（ライフタイムマイル）達成シミュレーション</h2>
-          <div className="flex bg-slate-700 p-0.5 rounded text-xs">
-            <button onClick={() => setLtmMode('ana')} className={`px-2.5 py-1 rounded font-semibold ${ltmMode === 'ana' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}>ANAグループ便</button>
-            <button onClick={() => setLtmMode('total')} className={`px-2.5 py-1 rounded font-semibold ${ltmMode === 'total' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}>総LTM（他社便含む）</button>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 my-4">
-          <div>
-            <p className="text-xs text-slate-400">現在の累計 LTM ({ltmMode === 'ana' ? 'ANAグループ便のみ' : '総計'})</p>
-            <p className="text-2xl font-bold text-sky-400">{targetLTMCurrent.toLocaleString()} マイル</p>
-            <p className="text-[10px] text-slate-400 mt-0.5">(手入力過去分 ＋ ログ合算 - ANA: {currentAnaLTM.toLocaleString()} M / 他社: {currentStarLTM.toLocaleString()} M)</p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-400">目標 LTM</p>
-            <input type="text" value={targetLTMInput} onChange={(e) => setTargetLTMInput(e.target.value)} className="bg-slate-700 text-white px-3 py-1 rounded text-xl font-bold w-40 border border-slate-600 mt-1" />
-          </div>
-          <div>
-            <p className="text-xs text-slate-400">目標まであと</p>
-            <p className="text-2xl font-bold text-amber-400">{remainingLTM.toLocaleString()} マイル</p>
-          </div>
-        </div>
-        <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700 text-sm text-slate-200">
-          💡 達成目安: 羽田-那覇の往復（1,968マイル）で <span className="font-bold text-amber-300">{nahaTripsNeeded} 往復</span> です。
-        </div>
-      </div>
-
-      {/* フライト入力フォーム */}
-      <form onSubmit={handleSaveFlight} className={`${theme.cardBg} p-6 rounded-xl shadow-sm border ${theme.cardBorder} mb-8 space-y-4`}>
-        <div className="flex justify-between items-center border-b pb-3">
-          <h2 className="text-lg font-semibold text-slate-800">{editingId ? '✏️ フライトを編集' : '✈️ フライト実績を入力'}</h2>
-          <div className="flex bg-slate-200/70 p-1 rounded-lg">
-            <button type="button" onClick={() => setFlightType('domestic')} className={`px-4 py-1.5 rounded-md text-xs font-bold ${flightType === 'domestic' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>国内線</button>
-            <button type="button" onClick={() => setFlightType('international')} className={`px-4 py-1.5 rounded-md text-xs font-bold ${flightType === 'international' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>国際線</button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          <div><label className="text-xs text-slate-500 font-medium">搭乗日</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm bg-white" /></div>
-          <div><label className="text-xs text-slate-500 font-medium">運航会社</label><select value={airline} onChange={(e) => setAirline(e.target.value as 'ana' | 'star')} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm"><option value="ana">ANAグループ便</option><option value="star">他社便（スター等）</option></select></div>
-          <div><label className="text-xs text-slate-500 font-medium">出発地</label><select value={depAirport} onChange={(e) => setDepAirport(e.target.value)} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm">{renderAirportOptions()}</select></div>
-          <div><label className="text-xs text-slate-500 font-medium">到着地</label><select value={arrAirport} onChange={(e) => setArrAirport(e.target.value)} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm">{renderAirportOptions()}</select></div>
-          <div><label className="text-xs text-slate-500 font-medium">支払金額 (円) <span className="text-[10px] text-slate-400">※任意</span></label><input type="number" placeholder="未入力可" value={cost} onChange={(e) => setCost(e.target.value)} className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm bg-white" /></div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
-          <div>
-            <label className="text-xs text-slate-500 font-medium">運賃種別 / 予約クラス</label>
-            <select value={selectedFareId} onChange={(e) => {
-              const fId = Number(e.target.value); setSelectedFareId(fId);
-              const found = fareMasterList.find(f => f.id === fId);
-              if (found) { setAccRate(found.accumulation_rate); setBoardPoints(found.boarding_points); }
-            }} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-xs font-medium">
-              {currentFares.map(f => <option key={f.id} value={f.id}>{f.fare_category} ({f.accumulation_rate}%)</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-slate-500 font-medium">搭乗ポイント</label>
-            <select value={boardPoints} onChange={(e) => setBoardPoints(Number(e.target.value))} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-xs">
-              <option value={400}>400 ポイント</option><option value={200}>200 ポイント</option><option value={0}>0 ポイント</option>
-            </select>
-          </div>
-        </div>
-
-        {routeError ? (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm flex items-center gap-2 font-medium">⚠️ {routeError}</div>
-        ) : (
-          <div className="flex gap-6 items-center bg-slate-100 p-3 rounded-lg text-sm border border-slate-200">
-            <span className="text-slate-600 font-medium">自動算出結果:</span>
-            <div>獲得マイル: <span className="font-bold text-indigo-600">{calculatedMiles?.toLocaleString()} M</span></div>
-            <div>獲得PP: <span className="font-bold text-blue-600">{calculatedPP?.toLocaleString()} PP</span></div>
-            <div>PP単価: <span className="font-bold text-emerald-600">¥{cost && calculatedPP && calculatedPP > 0 ? (Number(cost) / calculatedPP).toFixed(1) : '0'}</span></div>
+      {/* LTMシミュレーション（未ログイン時はロック） */}
+      <div className="relative mb-8">
+        {!currentUser && (
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-10 rounded-xl flex flex-col items-center justify-center text-white border border-slate-700">
+            <span className="text-3xl mb-2">🔒</span>
+            <p className="font-bold mb-3">LTMのシミュレーション機能は会員限定です</p>
+            <button onClick={() => setIsAuthModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 px-5 py-2.5 rounded-lg font-bold text-sm shadow-lg transition">ログイン / 無料会員登録</button>
           </div>
         )}
-
-        <button type="submit" disabled={!!routeError} className={`font-medium px-5 py-2.5 rounded-lg transition w-full md:w-auto shadow-sm ${routeError ? 'bg-slate-300 text-slate-500' : theme.primaryBtn}`}>
-          {editingId ? '更新を保存する' : 'フライトを登録する'}
-        </button>
-      </form>
-
-      {/* 履歴テーブル */}
-      <div className={`${theme.cardBg} rounded-xl shadow-sm border ${theme.cardBorder}`}>
-        <div className="p-4 bg-slate-100/80 border-b flex flex-wrap gap-4 justify-between items-center">
-          <div className="flex items-center gap-3">
-            <span className="font-semibold text-slate-700">{selectedYear}年のフライト履歴 ({filteredFlights.length}件)</span>
-            <div className="flex bg-white border border-slate-300 rounded-lg p-0.5 text-xs">
-              <button type="button" onClick={() => setCategoryFilter('all')} className={`px-2.5 py-1 rounded-md font-medium transition ${categoryFilter === 'all' ? 'bg-slate-800 text-white' : 'text-slate-600'}`}>すべて</button>
-              <button type="button" onClick={() => setCategoryFilter('domestic')} className={`px-2.5 py-1 rounded-md font-medium transition ${categoryFilter === 'domestic' ? 'bg-slate-800 text-white' : 'text-slate-600'}`}>国内線のみ</button>
-              <button type="button" onClick={() => setCategoryFilter('international')} className={`px-2.5 py-1 rounded-md font-medium transition ${categoryFilter === 'international' ? 'bg-slate-800 text-white' : 'text-slate-600'}`}>国際線のみ</button>
+        <div className="bg-gradient-to-r from-slate-900 via-slate-850 to-slate-800 text-white p-6 rounded-xl shadow-md">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-lg font-bold flex items-center gap-2">✈️ LTM（ライフタイムマイル）達成シミュレーション</h2>
+            <div className="flex bg-slate-700 p-0.5 rounded text-xs">
+              <button onClick={() => setLtmMode('ana')} className={`px-2.5 py-1 rounded font-semibold ${ltmMode === 'ana' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}>ANAグループ便</button>
+              <button onClick={() => setLtmMode('total')} className={`px-2.5 py-1 rounded font-semibold ${ltmMode === 'total' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}>総LTM（他社便含む）</button>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button onClick={handleExportCSV} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 shadow-sm">📄 CSVダウンロード</button>
-            <div className="flex items-center gap-1 text-xs text-slate-500">
-              <span>表示:</span>
-              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="border bg-white px-2 py-1 rounded text-slate-800 font-medium">
-                <option value={20}>20件</option>
-                <option value={50}>50件</option>
-                <option value={100}>100件</option>
-                <option value={200}>200件</option>
-                <option value={9999}>全件</option>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 my-4">
+            <div>
+              <p className="text-xs text-slate-400">現在の累計 LTM ({ltmMode === 'ana' ? 'ANAグループ便のみ' : '総計'})</p>
+              <p className="text-2xl font-bold text-sky-400">{targetLTMCurrent.toLocaleString()} マイル</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">(手入力過去分 ＋ ログ合算 - ANA: {currentAnaLTM.toLocaleString()} M / 他社: {currentStarLTM.toLocaleString()} M)</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">目標 LTM</p>
+              <input type="text" value={targetLTMInput} onChange={(e) => setTargetLTMInput(e.target.value)} disabled={!currentUser} className="bg-slate-700 text-white px-3 py-1 rounded text-xl font-bold w-40 border border-slate-600 mt-1" />
+            </div>
+            <div>
+              <p className="text-xs text-slate-400">目標まであと</p>
+              <p className="text-2xl font-bold text-amber-400">{remainingLTM.toLocaleString()} マイル</p>
+            </div>
+          </div>
+          <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700 text-sm text-slate-200">
+            💡 達成目安: 羽田-那覇の往復（1,968マイル）で <span className="font-bold text-amber-300">{nahaTripsNeeded} 往復</span> です。
+          </div>
+        </div>
+      </div>
+
+      {/* フライト入力フォーム（未ログイン時はロック） */}
+      <div className="relative mb-8">
+        {!currentUser && (
+          <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-10 rounded-xl flex flex-col items-center justify-center text-slate-800 border border-slate-200">
+            <span className="text-3xl mb-2">✈️</span>
+            <p className="font-bold mb-3">フライト実績の登録はクラウドに安全に保存されます</p>
+            <button onClick={() => setIsAuthModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold text-sm shadow-lg transition">ログイン / 無料会員登録</button>
+          </div>
+        )}
+        <form onSubmit={handleSaveFlight} className={`${theme.cardBg} p-6 rounded-xl shadow-sm border ${theme.cardBorder} space-y-4`}>
+          <div className="flex justify-between items-center border-b pb-3">
+            <h2 className="text-lg font-semibold text-slate-800">{editingId ? '✏️ フライトを編集' : '✈️ フライト実績を入力'}</h2>
+            <div className="flex bg-slate-200/70 p-1 rounded-lg">
+              <button type="button" onClick={() => setFlightType('domestic')} disabled={!currentUser} className={`px-4 py-1.5 rounded-md text-xs font-bold ${flightType === 'domestic' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>国内線</button>
+              <button type="button" onClick={() => setFlightType('international')} disabled={!currentUser} className={`px-4 py-1.5 rounded-md text-xs font-bold ${flightType === 'international' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>国際線</button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+            <div><label className="text-xs text-slate-500 font-medium">搭乗日</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} disabled={!currentUser} className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm bg-white" /></div>
+            <div><label className="text-xs text-slate-500 font-medium">運航会社</label><select value={airline} onChange={(e) => setAirline(e.target.value as 'ana' | 'star')} disabled={!currentUser} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm"><option value="ana">ANAグループ便</option><option value="star">他社便（スター等）</option></select></div>
+            <div><label className="text-xs text-slate-500 font-medium">出発地</label><select value={depAirport} onChange={(e) => setDepAirport(e.target.value)} disabled={!currentUser} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm">{renderAirportOptions(flightType === 'domestic')}</select></div>
+            <div><label className="text-xs text-slate-500 font-medium">到着地</label><select value={arrAirport} onChange={(e) => setArrAirport(e.target.value)} disabled={!currentUser} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm">{renderAirportOptions(flightType === 'domestic')}</select></div>
+            <div><label className="text-xs text-slate-500 font-medium">支払金額 (円) <span className="text-[10px] text-slate-400">※任意</span></label><input type="number" placeholder="未入力可" value={cost} onChange={(e) => setCost(e.target.value)} disabled={!currentUser} className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm bg-white" /></div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
+            <div>
+              <label className="text-xs text-slate-500 font-medium">運賃種別 / 予約クラス</label>
+              <select value={selectedFareId} disabled={!currentUser} onChange={(e) => {
+                const fId = Number(e.target.value); setSelectedFareId(fId);
+                const found = fareMasterList.find(f => f.id === fId);
+                if (found) { setAccRate(found.accumulation_rate); setBoardPoints(found.boarding_points); }
+              }} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-xs font-medium">
+                {currentFares.map(f => <option key={f.id} value={f.id}>{f.fare_category} ({f.accumulation_rate}%)</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 font-medium">搭乗ポイント</label>
+              <select value={boardPoints} disabled={!currentUser} onChange={(e) => setBoardPoints(Number(e.target.value))} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-xs">
+                <option value={400}>400 ポイント</option><option value={200}>200 ポイント</option><option value={0}>0 ポイント</option>
               </select>
             </div>
           </div>
-        </div>
 
-        <table className="w-full text-left text-sm text-slate-600">
-          <thead className="bg-slate-50 text-slate-500 font-semibold border-b">
-            <tr>
-              <th className="p-3">日付</th>
-              <th className="p-3">種別</th>
-              <th className="p-3">運航会社</th>
-              <th className="p-3">路線</th>
-              <th className="p-3">金額</th>
-              <th className="p-3">獲得PP</th>
-              <th className="p-3">PP単価</th>
-              <th className="p-3">獲得LTM</th>
-              <th className="p-3 text-right">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredFlights.slice(0, pageSize).map((f) => (
-              <tr key={f.id} className="border-b last:border-0 hover:bg-slate-100/50 relative">
-                <td className="p-3">{f.date}</td>
-                <td className="p-3">
-                  <span className={`px-2 py-0.5 rounded text-xs font-semibold ${f.type === 'domestic' ? 'bg-sky-100 text-sky-800' : 'bg-purple-100 text-purple-800'}`}>
-                    {f.type === 'domestic' ? '国内線' : '国際線'}
-                  </span>
-                </td>
-                <td className="p-3">
-                  <span className={`px-2 py-0.5 rounded text-xs font-semibold ${f.airline === 'ana' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-700'}`}>
-                    {f.airline === 'ana' ? 'ANAグループ' : '他社便'}
-                  </span>
-                </td>
-                <td className="p-3 font-medium text-slate-800">{f.route}</td>
-                <td className="p-3">¥{(f.cost || 0).toLocaleString()}</td>
-                <td className="p-3 font-semibold text-blue-600">{f.pp.toLocaleString()}</td>
-                <td className="p-3 font-semibold text-emerald-600">¥{f.cost && f.pp > 0 ? (f.cost / f.pp).toFixed(1) : '0'}</td>
-                <td className="p-3">{f.ltm.toLocaleString()} M</td>
-                <td className="p-3 text-right relative">
-                  <button onClick={() => setOpenMenuId(openMenuId === f.id ? null : f.id)} className="px-2 py-1 text-slate-500 hover:bg-slate-200 rounded text-lg font-bold">⋮</button>
-                  {openMenuId === f.id && (
-                    <div className="absolute right-3 top-10 bg-white border border-slate-200 rounded-lg shadow-lg z-10 text-left w-24 overflow-hidden">
-                      <button onClick={() => handleEdit(f)} className="w-full px-3 py-2 text-xs text-slate-700 hover:bg-slate-100 block">編集</button>
-                      <button onClick={() => handleDelete(f.id)} className="w-full px-3 py-2 text-xs text-red-600 hover:bg-red-50 block border-t border-slate-100">削除</button>
-                    </div>
-                  )}
-                </td>
+          {routeError ? (
+            <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm flex items-center gap-2 font-medium">⚠️ {routeError}</div>
+          ) : (
+            <div className="flex gap-6 items-center bg-slate-100 p-3 rounded-lg text-sm border border-slate-200">
+              <span className="text-slate-600 font-medium">自動算出結果:</span>
+              <div>獲得マイル: <span className="font-bold text-indigo-600">{calculatedMiles?.toLocaleString()} M</span></div>
+              <div>獲得PP: <span className="font-bold text-blue-600">{calculatedPP?.toLocaleString()} PP</span></div>
+              <div>PP単価: <span className="font-bold text-emerald-600">¥{cost && calculatedPP && calculatedPP > 0 ? (Number(cost) / calculatedPP).toFixed(1) : '0'}</span></div>
+            </div>
+          )}
+
+          <button type="submit" disabled={!!routeError || !currentUser} className={`font-medium px-5 py-2.5 rounded-lg transition w-full md:w-auto shadow-sm ${routeError || !currentUser ? 'bg-slate-300 text-slate-500' : theme.primaryBtn}`}>
+            {editingId ? '更新を保存する' : 'フライトを登録する'}
+          </button>
+        </form>
+      </div>
+
+      {/* 履歴テーブル（未ログイン時はロック） */}
+      <div className="relative">
+        {!currentUser && (
+          <div className="absolute inset-0 bg-white/70 backdrop-blur-sm z-10 rounded-xl flex flex-col items-center justify-center text-slate-800 border border-slate-200">
+            <span className="text-3xl mb-2">📊</span>
+            <p className="font-bold mb-3">フライト履歴の一括管理・CSV出力が可能です</p>
+            <button onClick={() => setIsAuthModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold text-sm shadow-lg transition">ログインして始める</button>
+          </div>
+        )}
+        <div className={`${theme.cardBg} rounded-xl shadow-sm border ${theme.cardBorder}`}>
+          <div className="p-4 bg-slate-100/80 border-b flex flex-wrap gap-4 justify-between items-center">
+            <div className="flex items-center gap-3">
+              <span className="font-semibold text-slate-700">{selectedYear}年のフライト履歴 ({filteredFlights.length}件)</span>
+              <div className="flex bg-white border border-slate-300 rounded-lg p-0.5 text-xs">
+                <button type="button" onClick={() => setCategoryFilter('all')} disabled={!currentUser} className={`px-2.5 py-1 rounded-md font-medium transition ${categoryFilter === 'all' ? 'bg-slate-800 text-white' : 'text-slate-600'}`}>すべて</button>
+                <button type="button" onClick={() => setCategoryFilter('domestic')} disabled={!currentUser} className={`px-2.5 py-1 rounded-md font-medium transition ${categoryFilter === 'domestic' ? 'bg-slate-800 text-white' : 'text-slate-600'}`}>国内線のみ</button>
+                <button type="button" onClick={() => setCategoryFilter('international')} disabled={!currentUser} className={`px-2.5 py-1 rounded-md font-medium transition ${categoryFilter === 'international' ? 'bg-slate-800 text-white' : 'text-slate-600'}`}>国際線のみ</button>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={handleExportCSV} disabled={!currentUser} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs font-semibold transition flex items-center gap-1 shadow-sm disabled:opacity-50">📄 CSVダウンロード</button>
+              <div className="flex items-center gap-1 text-xs text-slate-500">
+                <span>表示:</span>
+                <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} disabled={!currentUser} className="border bg-white px-2 py-1 rounded text-slate-800 font-medium">
+                  <option value={20}>20件</option><option value={50}>50件</option><option value={100}>100件</option><option value={200}>200件</option><option value={9999}>全件</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <table className="w-full text-left text-sm text-slate-600">
+            <thead className="bg-slate-50 text-slate-500 font-semibold border-b">
+              <tr>
+                <th className="p-3">日付</th>
+                <th className="p-3">種別</th>
+                <th className="p-3">運航会社</th>
+                <th className="p-3">路線</th>
+                <th className="p-3">金額</th>
+                <th className="p-3">獲得PP</th>
+                <th className="p-3">PP単価</th>
+                <th className="p-3">獲得LTM</th>
+                <th className="p-3 text-right">操作</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filteredFlights.slice(0, pageSize).map((f) => (
+                <tr key={f.id} className="border-b last:border-0 hover:bg-slate-100/50 relative">
+                  <td className="p-3">{f.date}</td>
+                  <td className="p-3">
+                    <span className={`px-2 py-0.5 rounded text-xs font-semibold ${f.type === 'domestic' ? 'bg-sky-100 text-sky-800' : 'bg-purple-100 text-purple-800'}`}>
+                      {f.type === 'domestic' ? '国内線' : '国際線'}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    <span className={`px-2 py-0.5 rounded text-xs font-semibold ${f.airline === 'ana' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-700'}`}>
+                      {f.airline === 'ana' ? 'ANAグループ' : '他社便'}
+                    </span>
+                  </td>
+                  <td className="p-3 font-medium text-slate-800">{f.route}</td>
+                  <td className="p-3">¥{(f.cost || 0).toLocaleString()}</td>
+                  <td className="p-3 font-semibold text-blue-600">{f.pp.toLocaleString()}</td>
+                  <td className="p-3 font-semibold text-emerald-600">¥{f.cost && f.pp > 0 ? (f.cost / f.pp).toFixed(1) : '0'}</td>
+                  <td className="p-3">{f.ltm.toLocaleString()} M</td>
+                  <td className="p-3 text-right relative">
+                    <button onClick={() => setOpenMenuId(openMenuId === f.id ? null : f.id)} className="px-2 py-1 text-slate-500 hover:bg-slate-200 rounded text-lg font-bold">⋮</button>
+                    {openMenuId === f.id && (
+                      <div className="absolute right-3 top-10 bg-white border border-slate-200 rounded-lg shadow-lg z-10 text-left w-24 overflow-hidden">
+                        <button onClick={() => handleEdit(f)} className="w-full px-3 py-2 text-xs text-slate-700 hover:bg-slate-100 block">編集</button>
+                        <button onClick={() => handleDelete(f.id)} className="w-full px-3 py-2 text-xs text-red-600 hover:bg-red-50 block border-t border-slate-100">削除</button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* アフィリエイト枠2：ホテル予約訴求 */}
