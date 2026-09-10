@@ -17,9 +17,14 @@ const getTodayDateString = (): string => {
   return `${year}-${month}-${day}`;
 };
 
-// -----------------------------------------------------
-// 型定義
-// -----------------------------------------------------
+const CITY_NAME_MAP: Record<string, string> = {
+  'TOKYO/HANEDA': '羽田', 'TOKYO/NARITA': '成田', 'TOKYO': '東京',
+  'BANGKOK': 'バンコク', 'SINGAPORE': 'シンガポール', 'KUALA LUMPUR': 'クアラルンプール',
+  'KUALA LUMPUR SPNG': 'クアラルンプール', 'OKINAWA': '那覇', 'SAPPORO': '新千歳',
+  'FUKUOKA': '福岡', 'OSAKA/ITAMI': '伊丹', 'OSAKA/KANSAI': '関空', 'HIROSHIMA': '広島',
+  '東京（羽田）': '羽田', '広島': '広島'
+};
+
 interface FareMaster {
   id: number;
   flight_type: 'domestic' | 'international';
@@ -134,21 +139,16 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // -----------------------------------------------------
   // マスタデータ取得 (運賃・空港・路線)
-  // -----------------------------------------------------
   const fetchMasterData = async () => {
     if (!supabase) return;
 
-    // 運賃マスタ
     const { data: fares } = await supabase.from('fare_master').select('*').order('display_order', { ascending: true });
     if (fares) setFareMasterList(fares as FareMaster[]);
 
-    // 空港マスタ
     const { data: airports } = await supabase.from('airports').select('*').order('display_order', { ascending: true });
     if (airports) setAirportList(airports as Airport[]);
 
-    // 路線マスタ
     const { data: routes } = await supabase.from('routes').select('*');
     if (routes) setRouteList(routes as RouteInfo[]);
   };
@@ -205,6 +205,8 @@ export default function Home() {
     const savedFlights = localStorage.getItem('ana_flights');
     if (savedFlights) {
       setFlights(JSON.parse(savedFlights));
+    } else {
+      setFlights([]);
     }
     setIsDataLoaded(true);
   };
@@ -251,7 +253,6 @@ export default function Home() {
     }
   }, [currentStatus, cardType, pastAnaLTM, pastStarLTM, flights, targetLTMInput, goalMode, selectedStatus, currentUser, mounted, isDataLoaded]);
 
-  // 種別切り替え時のデフォルト値と運賃セット
   useEffect(() => {
     if (!editingId) {
       if (flightType === 'domestic') {
@@ -270,17 +271,14 @@ export default function Home() {
     }
   }, [flightType, editingId, fareMasterList]);
 
-  // -----------------------------------------------------
-  // PP・マイル自動計算 (路線マスタ基準)
-  // -----------------------------------------------------
+  // PP・マイル自動計算
   useEffect(() => {
     if (depAirport === arrAirport) {
-      setRouteError('出発と到着に同じ空港が選択されています。');
+      setRouteError('出発地と到着地に同じ空港が選択されています。');
       setCalculatedMiles(null); setCalculatedPP(null); setCalculatedLTM(null);
       return;
     }
 
-    // 双方向で路線マスタを検索
     const route = routeList.find(r => 
       (r.airport1_code === depAirport && r.airport2_code === arrAirport) ||
       (r.airport1_code === arrAirport && r.airport2_code === depAirport)
@@ -300,13 +298,11 @@ export default function Home() {
     setCalculatedMiles(miles);
     setCalculatedLTM(baseMile);
 
-    // PP倍率判定 (ANA便のみ倍率変動)
     let multiplier = 1.0;
     if (airline === 'ana') {
       if (flightType === 'domestic') {
         multiplier = 2.0;
       } else {
-        // 出発地または到着地がアジア・オセアニアなら1.5倍
         const depRegion = airportList.find(a => a.code === depAirport)?.region;
         const arrRegion = airportList.find(a => a.code === arrAirport)?.region;
         if (depRegion === 'asia' || depRegion === 'oceania' || arrRegion === 'asia' || arrRegion === 'oceania') {
@@ -348,13 +344,20 @@ export default function Home() {
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
       setAuthLoading(false);
-      if (error) setAuthMessage('ログインエラー。');
+      if (error) setAuthMessage('ログインエラー。アドレスまたはパスワードを確認してください。');
       else { setIsAuthModalOpen(false); setAuthPassword(''); }
     }
   };
 
+  // ログアウト処理 (画面表示データのリセット)
   const handleLogout = async () => {
-    if (supabase) { await supabase.auth.signOut(); setCurrentUser(null); setIsHeaderMenuOpen(false); alert('ログアウトしました。'); }
+    if (supabase) {
+      await supabase.auth.signOut();
+      setCurrentUser(null);
+      setIsHeaderMenuOpen(false);
+      loadLocalStorageData(); // ローカルストレージデータの読み込みに切り替え
+      alert('ログアウトしました。');
+    }
   };
 
   const getRouteLabel = () => {
@@ -419,7 +422,7 @@ export default function Home() {
     setOpenMenuId(null);
   };
 
-  const handleExportCSV = () => { /* CSVエクスポート処理（省略せずそのまま） */
+  const handleExportCSV = () => {
     const headers = ['搭乗日', '種別', '運航会社', '路線', '金額(円)', '獲得PP', 'PP単価', '獲得マイル', '獲得LTM'];
     const csvRows = filteredFlights.map(f => [
       f.date, f.type === 'domestic' ? '国内線' : '国際線', f.airline === 'ana' ? 'ANAグループ便' : 'スターアライアンス/他社便',
@@ -432,14 +435,90 @@ export default function Home() {
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
+  const parseCSVLine = (line: string): string[] => {
+    if (line.includes('\t')) return line.split('\t').map(c => c.replace(/^["']|["']$/g, '').trim());
+    const result: string[] = []; let current = ''; let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') inQuotes = !inQuotes;
+      else if (char === ',' && !inQuotes) { result.push(current.replace(/^["']|["']$/g, '').trim()); current = ''; }
+      else current += char;
+    }
+    result.push(current.replace(/^["']|["']$/g, '').trim());
+    return result;
+  };
+
   const handleImportCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    // 省略せずに維持
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async (event) => {
-      // (内容維持) ...
-      alert('CSVインポート機能は現在メンテナンス中です。');
+      const text = event.target?.result as string;
+      if (!text) return;
+      const lines = text.split(/\r\n|\n/);
+      const newImportedFlights: Flight[] = [];
+      const dbInsertRows: any[] = [];
+
+      lines.forEach((line, index) => {
+        if (!line.trim()) return;
+        const cols = parseCSVLine(line);
+        if (cols.length < 3) return;
+
+        const dateRaw = cols[0];
+        const flightNo = cols[1] || '';
+        const content = cols[2] || '';
+
+        const isService = content.includes('ANAカード') || content.includes('ANAPAY') || content.includes('でんき') || content.includes('モバイル');
+        if (isService) return;
+        if (!flightNo && !content.includes('-') && !content.includes('−')) return;
+
+        let miles = 0; let pp = 0;
+        if (cols[5]) miles = parseInt(cols[5].replace(/,/g, ''), 10) || 0;
+        if (cols[9]) pp = parseInt(cols[9].replace(/,/g, ''), 10) || 0;
+
+        const dateParts = dateRaw.split(/[\/-]/);
+        if (dateParts.length !== 3) return;
+        const formattedDate = `${dateParts[0]}-${dateParts[1].padStart(2, '0')}-${dateParts[2].padStart(2, '0')}`;
+
+        let formattedRoute = content;
+        let ltmValue = 0;
+        if (content.includes('-') || content.includes('−')) {
+          const parts = content.split(/[-−]/);
+          const depRaw = parts[0].trim(); const arrRaw = parts[1].trim();
+          const dep = CITY_NAME_MAP[depRaw] || depRaw;
+          const arr = CITY_NAME_MAP[arrRaw] || arrRaw;
+          formattedRoute = `${dep} - ${arr}`;
+          const route = routeList.find(r => (r.airport1_code === dep && r.airport2_code === arr) || (r.airport1_code === arr && r.airport2_code === dep));
+          ltmValue = route ? route.base_miles : miles;
+        }
+        if (ltmValue === 0) ltmValue = miles;
+
+        const isANA = flightNo.startsWith('NH') || content.includes('東京') || content.includes('羽田');
+        const isInt = content.includes('/') || /[A-Za-z]/.test(content);
+
+        const flightItem: Flight = {
+          id: Date.now() + index, date: formattedDate, type: isInt ? 'international' : 'domestic',
+          airline: isANA ? 'ana' : 'star', route: formattedRoute, cost: 0, pp, miles, ltm: ltmValue,
+        };
+        newImportedFlights.push(flightItem);
+
+        if (currentUser) {
+          dbInsertRows.push({
+            user_id: currentUser.id, flight_date: formattedDate, type: isInt ? 'international' : 'domestic',
+            airline: isANA ? 'ana' : 'star', route: formattedRoute, cost: 0, pp, miles, ltm: ltmValue,
+          });
+        }
+      });
+
+      if (newImportedFlights.length > 0) {
+        if (currentUser && supabase && dbInsertRows.length > 0) {
+          await supabase.from('flights').insert(dbInsertRows);
+          loadCloudData(currentUser);
+        } else {
+          setFlights((prev) => [...newImportedFlights, ...prev]);
+        }
+        alert(`${newImportedFlights.length} 件の明細を取り込みました！`);
+      }
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -461,7 +540,8 @@ export default function Home() {
   const currentAnaLTM = pastAnaLTM + flights.filter(f => f.airline === 'ana').reduce((sum, f) => sum + f.ltm, 0);
   const currentStarLTM = pastStarLTM + flights.filter(f => f.airline === 'star').reduce((sum, f) => sum + f.ltm, 0);
   const targetLTM = Number(targetLTMInput.replace(/,/g, '')) || 0;
-  const remainingLTM = Math.max(0, targetLTM - (ltmMode === 'ana' ? currentAnaLTM : currentAnaLTM + currentStarLTM));
+  const targetLTMCurrent = ltmMode === 'ana' ? currentAnaLTM : currentAnaLTM + currentStarLTM;
+  const remainingLTM = Math.max(0, targetLTM - targetLTMCurrent);
 
   const STATUS_SPECS: any = {
     bronze: { name: 'ブロンズ', flightTotal: 30000, flightAnaRequired: 15000, lifeAnaRequired: 15000 },
@@ -483,7 +563,6 @@ export default function Home() {
   const theme = STATUS_THEMES[currentStatus] || STATUS_THEMES.none;
   const CARD_NAMES: any = { none: 'カードなし', general: 'ANA一般カード', gold: 'ANAゴールドカード', premium: 'ANAカード プレミアム' };
 
-  // 空港プルダウンを描画する補助関数（地域ごとにグルーピング）
   const renderAirportOptions = () => {
     const jpAirports = airportList.filter(a => a.region === 'japan');
     const asiaAirports = airportList.filter(a => a.region === 'asia');
@@ -512,7 +591,7 @@ export default function Home() {
     <main className={`min-h-screen ${theme.appBg} p-6 max-w-5xl mx-auto font-sans transition-colors duration-500`}>
       <input type="file" ref={fileInputRef} accept=".csv,.txt" onChange={handleImportCSV} className="hidden" />
 
-      {/* ヘッダー */}
+      {/* アプリヘッダー */}
       <div className={`${theme.headerBg} p-5 rounded-xl shadow-md mb-6 relative`}>
         <div className="flex justify-between items-center gap-4">
           <div className="flex items-center gap-3">
@@ -530,17 +609,94 @@ export default function Home() {
               {isHeaderMenuOpen && (
                 <div className="absolute right-0 top-11 bg-white border border-slate-200 rounded-xl shadow-xl z-50 w-52 overflow-hidden text-slate-800 text-xs py-1">
                   {currentUser ? (
-                    <div className="px-3 py-2 border-b bg-slate-50"><p className="font-bold truncate">👤 {currentUser.email}</p><button onClick={handleLogout} className="text-red-600 font-bold hover:underline mt-1 block">ログアウト</button></div>
+                    <div className="px-3 py-2 border-b bg-slate-50">
+                      <p className="font-bold truncate">👤 {currentUser.email}</p>
+                      <button onClick={handleLogout} className="text-red-600 font-bold hover:underline mt-1 block">ログアウト</button>
+                    </div>
                   ) : (
-                    <button onClick={() => {setIsHeaderMenuOpen(false); setIsAuthModalOpen(true);}} className="w-full text-left px-4 py-2.5 hover:bg-slate-100 font-bold text-blue-600">🔑 ログイン</button>
+                    <button onClick={() => {setIsHeaderMenuOpen(false); setIsAuthModalOpen(true);}} className="w-full text-left px-4 py-2.5 hover:bg-slate-100 font-bold text-blue-600">🔑 ログイン / 会員登録</button>
                   )}
                   <button onClick={() => {setIsHeaderMenuOpen(false); setIsSettingsOpen(true);}} className="w-full text-left px-4 py-2.5 hover:bg-slate-100 font-semibold">⚙️ ユーザー設定</button>
+                  <button onClick={() => {setIsHeaderMenuOpen(false); fileInputRef.current?.click();}} className="w-full text-left px-4 py-2.5 hover:bg-slate-100 font-semibold border-t border-slate-100">📥 明細CSV取込</button>
                 </div>
               )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* ログインモーダル */}
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-5 border border-slate-200">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="text-lg font-bold text-slate-800">🔑 アカウント認証</h3>
+              <button onClick={() => setIsAuthModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-xl font-bold px-2">✕</button>
+            </div>
+            <button onClick={handleGoogleLogin} disabled={authLoading} className="w-full bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold py-2.5 rounded-lg text-sm transition shadow-sm flex items-center justify-center gap-2">
+              Google でログイン
+            </button>
+            <div className="flex bg-slate-100 p-1 rounded-xl text-xs">
+              <button type="button" onClick={() => setAuthTab('login')} className={`flex-1 py-1.5 font-bold rounded-lg ${authTab === 'login' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>ログイン</button>
+              <button type="button" onClick={() => setAuthTab('signup')} className={`flex-1 py-1.5 font-bold rounded-lg ${authTab === 'signup' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>新規登録</button>
+            </div>
+            <form onSubmit={handleEmailPasswordAuth} className="space-y-3.5">
+              <input type="email" required placeholder="メールアドレス" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
+              <input type="password" required placeholder="パスワード(6文字以上)" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} className="w-full border p-2.5 rounded-lg text-sm bg-slate-50" />
+              {authMsg && <div className="p-2.5 rounded text-xs bg-red-50 text-red-700">{authMsg}</div>}
+              <button type="submit" disabled={authLoading} className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2.5 rounded-lg text-sm transition">
+                {authLoading ? '処理中...' : authTab === 'signup' ? '登録する' : 'ログイン'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ユーザー設定モーダル */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-6 border border-slate-200">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="text-lg font-bold text-slate-800">⚙️ ユーザー設定</h3>
+              <button onClick={() => setIsSettingsOpen(false)} className="text-slate-400 hover:text-slate-600 text-xl font-bold px-2">✕</button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">現在のステータス</label>
+                <select value={currentStatus} onChange={(e) => setCurrentStatus(e.target.value)} className="w-full border p-2.5 rounded-lg text-slate-800 bg-slate-50 font-medium">
+                  <option value="none">一般会員</option>
+                  <option value="bronze">ブロンズ</option>
+                  <option value="platinum">プラチナ (SFC)</option>
+                  <option value="diamond">ダイヤモンド</option>
+                  <option value="diamond_more">ダイヤモンド +More</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">所持カード</label>
+                <select value={cardType} onChange={(e) => setCardType(e.target.value)} className="w-full border p-2.5 rounded-lg text-slate-800 bg-slate-50 font-medium">
+                  <option value="none">カードなし</option>
+                  <option value="general">ANA一般カード</option>
+                  <option value="gold">ANAゴールドカード</option>
+                  <option value="premium">ANAカード プレミアム</option>
+                </select>
+              </div>
+              <div className="border-t pt-4 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 block">過去ANA便LTM</label>
+                  <input type="number" value={pastAnaLTM} onChange={(e) => setPastAnaLTM(Number(e.target.value) || 0)} className="border p-2 rounded-lg text-slate-800 w-full text-sm" />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 block">過去他社便LTM</label>
+                  <input type="number" value={pastStarLTM} onChange={(e) => setPastStarLTM(Number(e.target.value) || 0)} className="border p-2 rounded-lg text-slate-800 w-full text-sm" />
+                </div>
+              </div>
+            </div>
+            <div className="pt-3 border-t flex justify-end">
+              <button onClick={() => setIsSettingsOpen(false)} className="bg-blue-600 text-white px-5 py-2 rounded-lg font-semibold text-sm">保存して閉じる</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 目標ステータス設定 */}
       <div className={`${theme.cardBg} p-5 rounded-xl shadow-sm border ${theme.cardBorder} mb-6 space-y-4`}>
@@ -558,8 +714,47 @@ export default function Home() {
         </div>
       </div>
 
-      {/* サマリー・LTMシミュレーション部分は前回のまま維持 */}
-      
+      {/* サマリーカード */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        <div className={`${theme.cardBg} p-4 rounded-xl shadow-sm border ${theme.cardBorder}`}>
+          <p className="text-xs font-semibold text-slate-500">獲得プレミアムポイント (PP)</p>
+          <p className="text-xl font-bold text-blue-600 mt-1">
+            {goalMode === 'flight' ? `${totalPP.toLocaleString()} / ${targetTotalPP.toLocaleString()} PP` : `${anaPP.toLocaleString()} / ${targetAnaPP.toLocaleString()} PP`}
+          </p>
+          <div className="w-full bg-slate-200 h-2 rounded-full mt-2 overflow-hidden">
+            <div className={`${theme.progressBar} h-full`} style={{ width: `${Math.min(((goalMode === 'flight' ? totalPP : anaPP) / (targetTotalPP || 1)) * 100, 100)}%` }}></div>
+          </div>
+        </div>
+        <div className={`${theme.cardBg} p-4 rounded-xl shadow-sm border ${theme.cardBorder}`}>
+          <p className="text-xs font-semibold text-slate-500">年間総利用金額</p>
+          <p className="text-xl font-bold text-slate-800 mt-1">¥{totalCost.toLocaleString()}</p>
+        </div>
+        <div className={`${theme.cardBg} p-4 rounded-xl shadow-sm border ${theme.cardBorder}`}>
+          <p className="text-xs font-semibold text-slate-500">平均 PP単価</p>
+          <p className="text-xl font-bold text-emerald-600 mt-1">¥{avgPpUnitCost} / PP</p>
+        </div>
+        <div className={`${theme.cardBg} p-4 rounded-xl shadow-sm border ${theme.cardBorder}`}>
+          <p className="text-xs font-semibold text-slate-500">年間獲得LTM</p>
+          <p className="text-xl font-bold text-indigo-600 mt-1">{totalLTMInYear.toLocaleString()} M</p>
+        </div>
+      </div>
+
+      {/* LTMシミュレーション */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-850 to-slate-800 text-white p-6 rounded-xl shadow-md mb-8">
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-lg font-bold">✈️ LTM（ライフタイムマイル）達成シミュレーション</h2>
+          <div className="flex bg-slate-700 p-0.5 rounded text-xs">
+            <button onClick={() => setLtmMode('ana')} className={`px-2.5 py-1 rounded font-semibold ${ltmMode === 'ana' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}>ANAグループ便</button>
+            <button onClick={() => setLtmMode('total')} className={`px-2.5 py-1 rounded font-semibold ${ltmMode === 'total' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}>総LTM</button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 my-4">
+          <div><p className="text-xs text-slate-400">現在の累計 LTM</p><p className="text-2xl font-bold text-sky-400">{targetLTMCurrent.toLocaleString()} マイル</p></div>
+          <div><p className="text-xs text-slate-400">目標 LTM</p><input type="text" value={targetLTMInput} onChange={(e) => setTargetLTMInput(e.target.value)} className="bg-slate-700 text-white px-3 py-1 rounded text-xl font-bold w-40 border border-slate-600 mt-1" /></div>
+          <div><p className="text-xs text-slate-400">目標まであと</p><p className="text-2xl font-bold text-amber-400">{remainingLTM.toLocaleString()} マイル</p></div>
+        </div>
+      </div>
+
       {/* フライト入力フォーム */}
       <form onSubmit={handleSaveFlight} className={`${theme.cardBg} p-6 rounded-xl shadow-sm border ${theme.cardBorder} mb-8 space-y-4`}>
         <div className="flex justify-between items-center border-b pb-3">
@@ -571,39 +766,14 @@ export default function Home() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          <div>
-            <label className="text-xs text-slate-500 font-medium">搭乗日</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm bg-white" />
-          </div>
-          <div>
-            <label className="text-xs text-slate-500 font-medium">運航会社</label>
-            <select value={airline} onChange={(e) => setAirline(e.target.value as 'ana' | 'star')} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm">
-              <option value="ana">ANAグループ便</option><option value="star">他社便（スター等）</option>
-            </select>
-          </div>
-
-          {/* ▼ 改良した空港選択プルダウン（全空港対応＆国別グループ） ▼ */}
-          <div>
-            <label className="text-xs text-slate-500 font-medium">出発地</label>
-            <select value={depAirport} onChange={(e) => setDepAirport(e.target.value)} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm">
-              {renderAirportOptions()}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-slate-500 font-medium">到着地</label>
-            <select value={arrAirport} onChange={(e) => setArrAirport(e.target.value)} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm">
-              {renderAirportOptions()}
-            </select>
-          </div>
-          {/* ▲ 改良した空港選択プルダウン ▲ */}
-
-          <div>
-            <label className="text-xs text-slate-500 font-medium">支払金額 (円) <span className="text-[10px] text-slate-400">※任意</span></label>
-            <input type="number" placeholder="未入力可" value={cost} onChange={(e) => setCost(e.target.value)} className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm bg-white" />
-          </div>
+          <div><label className="text-xs text-slate-500 font-medium">搭乗日</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm bg-white" /></div>
+          <div><label className="text-xs text-slate-500 font-medium">運航会社</label><select value={airline} onChange={(e) => setAirline(e.target.value as 'ana' | 'star')} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm"><option value="ana">ANAグループ便</option><option value="star">他社便</option></select></div>
+          <div><label className="text-xs text-slate-500 font-medium">出発地</label><select value={depAirport} onChange={(e) => setDepAirport(e.target.value)} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm">{renderAirportOptions()}</select></div>
+          <div><label className="text-xs text-slate-500 font-medium">到着地</label><select value={arrAirport} onChange={(e) => setArrAirport(e.target.value)} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm">{renderAirportOptions()}</select></div>
+          <div><label className="text-xs text-slate-500 font-medium">支払金額 (円)</label><input type="number" placeholder="未入力可" value={cost} onChange={(e) => setCost(e.target.value)} className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm bg-white" /></div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50/80 p-4 rounded-lg border border-slate-200">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
           <div>
             <label className="text-xs text-slate-500 font-medium">運賃種別 / 予約クラス</label>
             <select value={selectedFareId} onChange={(e) => {
@@ -625,7 +795,7 @@ export default function Home() {
         {routeError ? (
           <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg text-sm flex items-center gap-2 font-medium">⚠️ {routeError}</div>
         ) : (
-          <div className="flex gap-6 items-center bg-slate-100/80 p-3 rounded-lg text-sm border border-slate-200">
+          <div className="flex gap-6 items-center bg-slate-100 p-3 rounded-lg text-sm border border-slate-200">
             <span className="text-slate-600 font-medium">自動算出:</span>
             <div>マイル: <span className="font-bold text-indigo-600">{calculatedMiles?.toLocaleString()} M</span></div>
             <div>PP: <span className="font-bold text-blue-600">{calculatedPP?.toLocaleString()} PP</span></div>
@@ -637,14 +807,14 @@ export default function Home() {
         </button>
       </form>
 
-      {/* 以下、履歴テーブル等のレンダリング */}
+      {/* 履歴テーブル */}
       <div className={`${theme.cardBg} rounded-xl shadow-sm border ${theme.cardBorder}`}>
-        <div className="p-4 bg-slate-100/80 border-b flex justify-between items-center">
+        <div className="p-4 bg-slate-100 border-b flex justify-between items-center">
           <span className="font-semibold text-slate-700">フライト履歴 ({filteredFlights.length}件)</span>
           <button onClick={handleExportCSV} className="bg-emerald-600 text-white px-3 py-1 rounded-lg text-xs font-semibold">📄 CSV出力</button>
         </div>
         <table className="w-full text-left text-sm text-slate-600">
-          <thead className="bg-slate-50/80 text-slate-500 font-semibold border-b">
+          <thead className="bg-slate-50 text-slate-500 font-semibold border-b">
             <tr>
               <th className="p-3">日付</th><th className="p-3">種別</th><th className="p-3">路線</th>
               <th className="p-3">獲得PP</th><th className="p-3">LTM</th><th className="p-3 text-right">操作</th>
@@ -666,6 +836,36 @@ export default function Home() {
           </tbody>
         </table>
       </div>
+
+      {/* フィードバック用自作モーダル */}
+      {isFeedbackOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-slate-200">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="text-base font-bold text-slate-800">💬 ご要望・エラー報告</h3>
+              <button onClick={() => setIsFeedbackOpen(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold px-2">✕</button>
+            </div>
+            <form onSubmit={handleSendFeedback} className="space-y-4">
+              <select value={feedbackType} onChange={(e) => setFeedbackType(e.target.value)} className="w-full border p-2 rounded-lg text-xs bg-slate-50">
+                <option value="bug">不具合の報告</option>
+                <option value="feature">改善案・ご要望</option>
+              </select>
+              <textarea required rows={4} placeholder="お気づきの点をご記入ください" value={feedbackContent} onChange={(e) => setFeedbackContent(e.target.value)} className="w-full border p-2.5 rounded-lg text-xs bg-slate-50" />
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setIsFeedbackOpen(false)} className="px-4 py-2 text-xs font-semibold text-slate-500">キャンセル</button>
+                <button type="submit" disabled={feedbackSending || !feedbackContent} className="bg-slate-800 text-white px-5 py-2 rounded-lg text-xs font-bold">
+                  {feedbackSending ? '送信中...' : '送信する'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 右下起動ボタン */}
+      <button onClick={() => setIsFeedbackOpen(true)} className="fixed bottom-5 right-5 bg-slate-800 text-white font-bold text-xs px-3.5 py-2.5 rounded-full shadow-lg z-40">
+        💬 ご要望・改善案
+      </button>
     </main>
   );
 }
