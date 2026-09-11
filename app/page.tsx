@@ -209,7 +209,8 @@ export default function Home() {
   // マスタ状態
   const [fareMasterList, setFareMasterList] = useState<FareMaster[]>([]);
   const [airportList, setAirportList] = useState<Airport[]>([]);
-  const [routeList, setRouteList] = useState<RouteInfo[]>([]);
+  const [routeList, setRouteList] = useState<RouteInfo[]>([]); // ANA便用
+  const [partnerRouteList, setPartnerRouteList] = useState<RouteInfo[]>([]); // パートナー航空会社便用
 
   // フォーム・メニュー状態
   const [selectedFareId, setSelectedFareId] = useState<number | string>('');
@@ -245,7 +246,7 @@ export default function Home() {
 
   // 入力フォーム状態
   const [flightType, setFlightType] = useState<'domestic' | 'international'>('domestic');
-  const [airline, setAirline] = useState<'ana' | 'star'>('ana');
+  const [airline, setAirline] = useState<'ana' | 'star'>('ana'); // 'star' はパートナー航空会社の内部値として維持
   const [date, setDate] = useState<string>(getTodayDateString());
   const [depAirport, setDepAirport] = useState('HND');
   const [arrAirport, setArrAirport] = useState('OKA');
@@ -277,8 +278,14 @@ export default function Home() {
     if (fares) setFareMasterList(fares as FareMaster[]);
     const { data: airports } = await supabase.from('airports').select('*').order('display_order', { ascending: true });
     if (airports) setAirportList(airports as Airport[]);
+    
+    // ANA便の路線マスタ
     const { data: routes } = await supabase.from('routes').select('*');
     if (routes) setRouteList(routes as RouteInfo[]);
+
+    // パートナー航空会社便の路線マスタ
+    const { data: pRoutes } = await supabase.from('partner_routes').select('*');
+    if (pRoutes) setPartnerRouteList(pRoutes as RouteInfo[]);
   };
 
   useEffect(() => {
@@ -398,7 +405,7 @@ export default function Home() {
     }
   }, [flightType, editingId, fareMasterList]);
 
-  // PP・マイル自動計算
+  // PP・マイル自動計算（運航会社に応じてマスタを切り替え）
   useEffect(() => {
     if (depAirport === arrAirport) {
       setRouteError('出発地と到着地に同じ空港が選択されています。');
@@ -406,7 +413,10 @@ export default function Home() {
       return;
     }
 
-    const route = routeList.find(r => 
+    // 運航会社に応じて参照するマスタを切り替え
+    const activeRouteList = airline === 'ana' ? routeList : partnerRouteList;
+
+    const route = activeRouteList.find(r => 
       (r.airport1_code === depAirport && r.airport2_code === arrAirport) ||
       (r.airport1_code === arrAirport && r.airport2_code === depAirport)
     );
@@ -414,7 +424,8 @@ export default function Home() {
     if (!route) {
       const depName = airportList.find(a => a.code === depAirport)?.name || depAirport;
       const arrName = airportList.find(a => a.code === arrAirport)?.name || arrAirport;
-      setRouteError(`「${depName} ⇔ ${arrName}」の直行便区間マイルがマスタに存在しません。`);
+      const airlineLabel = airline === 'ana' ? 'ANAグループ便' : 'パートナー航空会社便';
+      setRouteError(`「${depName} ⇔ ${arrName}」の${airlineLabel}区間マイルがマスタに存在しません。`);
       setCalculatedMiles(null); setCalculatedPP(null); setCalculatedLTM(null);
       return;
     }
@@ -426,6 +437,7 @@ export default function Home() {
     setCalculatedLTM(baseMile);
 
     let multiplier = 1.0;
+    // 路線倍率はANAグループ便のみ適用（国内2倍、アジア・オセアニア1.5倍）
     if (airline === 'ana') {
       if (flightType === 'domestic') {
         multiplier = 2.0;
@@ -440,7 +452,7 @@ export default function Home() {
 
     const pp = Math.floor(baseMile * (accRate / 100) * multiplier) + Number(boardPoints);
     setCalculatedPP(pp);
-  }, [depAirport, arrAirport, accRate, boardPoints, flightType, airline, routeList, airportList]);
+  }, [depAirport, arrAirport, accRate, boardPoints, flightType, airline, routeList, partnerRouteList, airportList]);
 
   const handleSendFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -544,7 +556,7 @@ export default function Home() {
   const handleExportCSV = () => {
     const headers = ['搭乗日', '種別', '運航会社', '路線', '金額(円)', '獲得PP', 'PP単価', '獲得マイル', '獲得LTM'];
     const csvRows = filteredFlights.map(f => [
-      f.date, f.type === 'domestic' ? '国内線' : '国際線', f.airline === 'ana' ? 'ANAグループ便' : 'スターアライアンス/他社便',
+      f.date, f.type === 'domestic' ? '国内線' : '国際線', f.airline === 'ana' ? 'ANAグループ便' : 'パートナー航空会社便',
       `"${f.route}"`, f.cost || 0, f.pp, f.cost && f.pp > 0 ? (f.cost / f.pp).toFixed(1) : '0', f.miles, f.ltm
     ]);
     const csvContent = '\uFEFF' + [headers.join(','), ...csvRows.map(row => row.join(','))].join('\n');
@@ -601,30 +613,33 @@ export default function Home() {
 
         let formattedRoute = content;
         let ltmValue = 0;
+        let finalAirline: 'ana' | 'star' = flightNo.startsWith('NH') || content.includes('東京') || content.includes('羽田') ? 'ana' : 'star';
+
         if (content.includes('-') || content.includes('−')) {
           const parts = content.split(/[-−]/);
           const depRaw = parts[0].trim(); const arrRaw = parts[1].trim();
           const dep = CITY_NAME_MAP[depRaw] || depRaw;
           const arr = CITY_NAME_MAP[arrRaw] || arrRaw;
           formattedRoute = `${dep} - ${arr}`;
-          const route = routeList.find(r => (r.airport1_code === dep && r.airport2_code === arr) || (r.airport1_code === arr && r.airport2_code === dep));
+          
+          const activeList = finalAirline === 'ana' ? routeList : partnerRouteList;
+          const route = activeList.find(r => (r.airport1_code === dep && r.airport2_code === arr) || (r.airport1_code === arr && r.airport2_code === dep));
           ltmValue = route ? route.base_miles : miles;
         }
         if (ltmValue === 0) ltmValue = miles;
 
-        const isANA = flightNo.startsWith('NH') || content.includes('東京') || content.includes('羽田');
         const isInt = content.includes('/') || /[A-Za-z]/.test(content);
 
         const flightItem: Flight = {
           id: Date.now() + index, date: formattedDate, type: isInt ? 'international' : 'domestic',
-          airline: isANA ? 'ana' : 'star', route: formattedRoute, cost: 0, pp, miles, ltm: ltmValue,
+          airline: finalAirline, route: formattedRoute, cost: 0, pp, miles, ltm: ltmValue,
         };
         newImportedFlights.push(flightItem);
 
         if (currentUser) {
           dbInsertRows.push({
             user_id: currentUser.id, flight_date: formattedDate, type: isInt ? 'international' : 'domestic',
-            airline: isANA ? 'ana' : 'star', route: formattedRoute, cost: 0, pp, miles, ltm: ltmValue,
+            airline: finalAirline, route: formattedRoute, cost: 0, pp, miles, ltm: ltmValue,
           });
         }
       });
@@ -809,7 +824,7 @@ export default function Home() {
                       />
                     </div>
                     <div>
-                      <label className="text-[11px] font-semibold text-slate-600 block">基準時点の総LTM (ANA＋他社便)</label>
+                      <label className="text-[11px] font-semibold text-slate-600 block">基準時点の総LTM (ANA＋パートナー便)</label>
                       <input
                         type="number"
                         value={pastStarLTM}
@@ -863,7 +878,7 @@ export default function Home() {
           </div>
           <div className="mt-3 pt-2 border-t text-xs flex justify-between text-slate-600">
             <span>ANA便: <strong className="text-blue-700">{anaPP.toLocaleString()} PP</strong></span>
-            <span>他社便: <strong className="text-purple-700">{starPP.toLocaleString()} PP</strong></span>
+            <span>パートナー便: <strong className="text-purple-700">{starPP.toLocaleString()} PP</strong></span>
           </div>
         </div>
         <div className={`${theme.cardBg} p-4 rounded-xl shadow-sm border ${theme.cardBorder}`}>
@@ -911,7 +926,7 @@ export default function Home() {
             <h2 className="text-lg font-bold flex items-center gap-2">✈️ LTM（ライフタイムマイル）達成シミュレーション</h2>
             <div className="flex bg-slate-700 p-0.5 rounded text-xs">
               <button onClick={() => setLtmMode('ana')} className={`px-2.5 py-1 rounded font-semibold ${ltmMode === 'ana' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}>ANAグループ便</button>
-              <button onClick={() => setLtmMode('total')} className={`px-2.5 py-1 rounded font-semibold ${ltmMode === 'total' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}>総LTM（他社便含む）</button>
+              <button onClick={() => setLtmMode('total')} className={`px-2.5 py-1 rounded font-semibold ${ltmMode === 'total' ? 'bg-blue-600 text-white' : 'text-slate-300'}`}>総LTM（パートナー便含む）</button>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 my-4">
@@ -955,7 +970,13 @@ export default function Home() {
 
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             <div><label className="text-xs text-slate-500 font-medium">搭乗日</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} disabled={!currentUser} className="border p-2 rounded-lg text-slate-800 w-full mt-1 text-sm bg-white" /></div>
-            <div><label className="text-xs text-slate-500 font-medium">運航会社</label><select value={airline} onChange={(e) => setAirline(e.target.value as 'ana' | 'star')} disabled={!currentUser} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm"><option value="ana">ANAグループ便</option><option value="star">他社便（スター等）</option></select></div>
+            <div>
+              <label className="text-xs text-slate-500 font-medium">運航会社</label>
+              <select value={airline} onChange={(e) => setAirline(e.target.value as 'ana' | 'star')} disabled={!currentUser} className="border p-2 rounded-lg text-slate-800 w-full mt-1 bg-white text-sm">
+                <option value="ana">ANAグループ便</option>
+                <option value="star">パートナー航空会社便</option>
+              </select>
+            </div>
             
             <AirportSelect
               label="出発地"
@@ -1069,7 +1090,7 @@ export default function Home() {
                   </td>
                   <td className="p-3">
                     <span className={`px-2 py-0.5 rounded text-xs font-semibold ${f.airline === 'ana' ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-700'}`}>
-                      {f.airline === 'ana' ? 'ANAグループ' : '他社便'}
+                      {f.airline === 'ana' ? 'ANAグループ' : 'パートナー便'}
                     </span>
                   </td>
                   <td className="p-3 font-medium text-slate-800">{f.route}</td>
