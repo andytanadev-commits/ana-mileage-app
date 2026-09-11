@@ -65,7 +65,7 @@ interface Flight {
 }
 
 // -----------------------------------------------------
-// 検索機能付き空港選択コンポーネント (AirportSelect)
+// アコーディオン開閉付き空港選択コンポーネント (AirportSelect)
 // -----------------------------------------------------
 function AirportSelect({
   label,
@@ -84,6 +84,9 @@ function AirportSelect({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [expandedRegions, setExpandedRegions] = useState<Record<string, boolean>>({
+    japan: true, // デフォルトで日本のみ開いた状態
+  });
   const containerRef = useRef<HTMLDivElement>(null);
 
   const selectedAirport = airportList.find(a => a.code === value);
@@ -112,31 +115,79 @@ function AirportSelect({
       })
     : targetAirports.filter(a => a.is_major);
 
-  const renderGroup = (regionKey: string, regionName: string) => {
-    const groupItems = filteredAirports.filter(a => a.region === regionKey);
+  const toggleRegion = (regionKey: string) => {
+    setExpandedRegions(prev => ({
+      ...prev,
+      [regionKey]: !prev[regionKey]
+    }));
+  };
+
+  // 国・地域に応じたグループ判定
+  const getGroupKey = (a: Airport) => {
+    if (a.region === 'japan' || a.country === '日本') return 'japan';
+    if (['HNL', 'KOA', 'OGG', 'ITO'].includes(a.code) || a.name.includes('ホノルル')) return 'hawaii';
+    if (['アメリカ', 'カナダ', 'メキシコ'].includes(a.country) || (a.region === 'other' && ['USA', 'Canada', 'Mexico'].includes(a.country))) return 'north_america';
+    if (a.region === 'asia') return 'asia';
+    if (['ドイツ', 'イギリス', 'フランス', 'スイス', 'オーストリア', 'スペイン', 'ポルトガル', 'ポーランド', 'ベルギー', 'イタリア', 'トルコ'].includes(a.country)) return 'europe';
+    if (a.region === 'oceania' || ['オーストラリア', 'ニュージーランド', 'グアム', 'ミクロネシア', 'パラオ'].includes(a.country)) return 'oceania';
+    return 'other';
+  };
+
+  const REGION_GROUPS = isDomesticOnly
+    ? [{ key: 'japan', name: '日本', icon: '🇯🇵' }]
+    : [
+        { key: 'japan', name: '日本', icon: '🇯🇵' },
+        { key: 'hawaii', name: 'ハワイ', icon: '🌺' },
+        { key: 'north_america', name: 'アメリカ・カナダ・メキシコ', icon: '🇺🇸' },
+        { key: 'asia', name: '東アジア・東南アジア・南アジア', icon: '🌏' },
+        { key: 'europe', name: 'ヨーロッパ', icon: '🇪🇺' },
+        { key: 'oceania', name: 'オセアニア・ミクロネシア', icon: '🐨' },
+        { key: 'other', name: '中東・アフリカ・中南米・その他', icon: '🌍' },
+      ];
+
+  const renderGroupAccordion = (groupKey: string, groupName: string, icon: string) => {
+    const groupItems = filteredAirports.filter(a => getGroupKey(a) === groupKey);
     if (groupItems.length === 0) return null;
 
+    const isExpanded = isSearching || !!expandedRegions[groupKey];
+
     return (
-      <div key={regionKey} className="mb-2">
-        <div className="px-3 py-1 text-[11px] font-bold text-slate-400 bg-slate-100/80 rounded mb-1">
-          {regionName}
-        </div>
-        {groupItems.map(a => (
-          <button
-            key={a.code}
-            type="button"
-            onClick={() => {
-              onChange(a.code);
-              setIsOpen(false);
-              setQuery('');
-            }}
-            className={`w-full text-left px-3 py-2 text-xs rounded-lg flex items-center justify-between transition ${
-              a.code === value ? 'bg-blue-50 font-bold text-blue-700' : 'hover:bg-slate-100 text-slate-700'
-            }`}
-          >
-            <span>{a.name} <span className="text-slate-400 font-normal">({a.code})</span></span>
-          </button>
-        ))}
+      <div key={groupKey} className="border-b border-slate-100 last:border-none">
+        <button
+          type="button"
+          onClick={() => !isSearching && toggleRegion(groupKey)}
+          className="w-full px-3 py-2.5 text-xs font-bold text-slate-700 bg-slate-50 hover:bg-slate-100 flex items-center justify-between transition"
+        >
+          <span className="flex items-center gap-1.5">
+            <span>{icon}</span>
+            <span>{groupName}</span>
+            <span className="text-[10px] text-slate-400 font-normal">({groupItems.length})</span>
+          </span>
+          {!isSearching && (
+            <span className="text-slate-400 text-sm font-semibold">{isExpanded ? '−' : '＋'}</span>
+          )}
+        </button>
+
+        {isExpanded && (
+          <div className="py-1 px-1 bg-white space-y-0.5">
+            {groupItems.map(a => (
+              <button
+                key={a.code}
+                type="button"
+                onClick={() => {
+                  onChange(a.code);
+                  setIsOpen(false);
+                  setQuery('');
+                }}
+                className={`w-full text-left px-3 py-2 text-xs rounded-lg flex items-center justify-between transition ${
+                  a.code === value ? 'bg-blue-50 font-bold text-blue-700' : 'hover:bg-slate-100 text-slate-700'
+                }`}
+              >
+                <span>{a.name} <span className="text-slate-400 font-normal">({a.code})</span></span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   };
@@ -157,7 +208,7 @@ function AirportSelect({
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 top-full mt-1 w-72 bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-2 space-y-2 max-h-80 overflow-y-auto">
+        <div className="absolute left-0 top-full mt-1 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-2 space-y-2 max-h-80 overflow-y-auto">
           <input
             type="text"
             placeholder="🔍 空港名・3レターコードで検索..."
@@ -168,23 +219,14 @@ function AirportSelect({
           />
 
           {!isSearching && (
-            <p className="text-[10px] text-slate-400 px-2">※検索欄にコードや都市名を入力して全空港から選択可能です。</p>
+            <p className="text-[10px] text-slate-400 px-2">※タップしてエリアを展開できます。コード検索で全空港対応。</p>
           )}
 
-          <div className="divide-y divide-slate-100">
+          <div className="rounded-lg overflow-hidden border border-slate-100 divide-y divide-slate-100">
             {filteredAirports.length === 0 ? (
               <p className="text-xs text-slate-400 text-center py-4">該当する空港が見つかりません</p>
             ) : (
-              <>
-                {renderGroup('japan', '🇯🇵 日本')}
-                {!isDomesticOnly && (
-                  <>
-                    {renderGroup('asia', '🌏 アジア')}
-                    {renderGroup('oceania', '🐨 オセアニア')}
-                    {renderGroup('other', '🌎 欧米・その他')}
-                  </>
-                )}
-              </>
+              REGION_GROUPS.map(g => renderGroupAccordion(g.key, g.name, g.icon))
             )}
           </div>
         </div>
@@ -246,7 +288,7 @@ export default function Home() {
 
   // 入力フォーム状態
   const [flightType, setFlightType] = useState<'domestic' | 'international'>('domestic');
-  const [airline, setAirline] = useState<'ana' | 'star'>('ana'); // 'star' はパートナー航空会社の内部値として維持
+  const [airline, setAirline] = useState<'ana' | 'star'>('ana');
   const [date, setDate] = useState<string>(getTodayDateString());
   const [depAirport, setDepAirport] = useState('HND');
   const [arrAirport, setArrAirport] = useState('OKA');
@@ -413,7 +455,6 @@ export default function Home() {
       return;
     }
 
-    // 運航会社に応じて参照するマスタを切り替え
     const activeRouteList = airline === 'ana' ? routeList : partnerRouteList;
 
     const route = activeRouteList.find(r => 
@@ -437,7 +478,6 @@ export default function Home() {
     setCalculatedLTM(baseMile);
 
     let multiplier = 1.0;
-    // 路線倍率はANAグループ便のみ適用（国内2倍、アジア・オセアニア1.5倍）
     if (airline === 'ana') {
       if (flightType === 'domestic') {
         multiplier = 2.0;
