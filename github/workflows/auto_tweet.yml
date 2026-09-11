@@ -1,0 +1,33 @@
+name: Auto Tweet Cron
+
+on:
+  schedule:
+    - cron: '0 23 * * *'  # 朝 08:00 JST
+    - cron: '30 3 * * *'  # 昼 12:30 JST
+    - cron: '0 11 * * *'  # 夜 20:00 JST
+  workflow_dispatch:
+
+jobs:
+  tweet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install tweepy
+
+      - name: Run Auto Tweet
+        env:
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+        run: python scripts/tweet.py

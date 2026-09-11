@@ -1,0 +1,37 @@
+{
+  "Monday": {
+    "morning": "週の始まりですね。自分用に作ったANAのPP・LTM管理ツールです✈️ 次の修行ルートを考える際、もしお役に立てそうならどうぞ🙏\nhttps://ana-mileage-app.vercel.app/\n#SFC修行 #ANAマイル",
+    "noon": "お昼休みに修行ルートの妄想を。パートナー航空会社や海外発券の計算もできるように個人的にアップデートしました。よろしければお使いください🛫\nhttps://ana-mileage-app.vercel.app/\n#ANAマイレージ #PP単価",
+    "night": "PPやLTMのエクセル管理が面倒で作ったWebアプリです。スマホからサクッと自動計算できます。修行のお供にひっそりシェアします🌙\nhttps://ana-mileage-app.vercel.app/\n#SFC修行 #ミリオンマイラー"
+  },
+  "Tuesday": {
+    "morning": "おはようございます。LTMの計算って少しややこしいですよね。目標まで「あと何マイルか」自動計算する機能を作ってみました✈️\nhttps://ana-mileage-app.vercel.app/\n#ミリオンマイラー #SFC修行",
+    "noon": "休憩時間に。スターアライアンス等パートナー便のマイル計算にも対応させてみました。変態ルートを組むのが好きな方、使えそうならどうぞ🌍\nhttps://ana-mileage-app.vercel.app/\n#SFC修行 #海外発券",
+    "night": "スマホで簡単にPP単価を計算・記録したくて作った個人開発ツールです。広告も少なくシンプルにしています。日々のフライト記録にぜひ🙏\nhttps://ana-mileage-app.vercel.app/\n#ANAマイル #SFC修行"
+  },
+  "Wednesday": {
+    "morning": "SFC修行中の方へ✈️ 目標PPまでの進捗がグラフで分かる自分用ツールです。エクセル管理に限界を感じた方、もしよければ試してみてください。\nhttps://ana-mileage-app.vercel.app/\n#SFC修行 #ANAマイル",
+    "noon": "空港の選択画面、ANAのサイトみたいに地域別に開閉できるように改修しました。ちょっとしたこだわりです笑。修行の計画作りにどうぞ🛫\nhttps://ana-mileage-app.vercel.app/\n#ANAマイレージ",
+    "night": "LTM修行で「あと何回那覇を往復すれば…？」を自動計算してくれます🏝️ 自分が知りたくて付けた機能ですが、同志の方がいればぜひ。\nhttps://ana-mileage-app.vercel.app/\n#ミリオンマイラー #LTM修行"
+  },
+  "Thursday": {
+    "morning": "おはようございます。過去のフライト履歴をCSV出力できる機能も付いてます。自分用に作ったものですが、記録の整理に使えそうならどうぞ✈️\nhttps://ana-mileage-app.vercel.app/\n#SFC修行 #PP単価",
+    "noon": "運賃倍率や搭乗ポイントなどを選ぶだけで、獲得PPとPP単価が自動で出ます。計算間違いを防ぎたくて作りました。お役に立てれば幸いです🙇‍♂️\nhttps://ana-mileage-app.vercel.app/\n#ANAマイル",
+    "night": "ANAマイページとLTMが二重カウントされないよう「基準日設定」を追加しました。かゆい所に手が届くよう調整中です。よろしければ🌙\nhttps://ana-mileage-app.vercel.app/\n#ミリオンマイラー"
+  },
+  "Friday": {
+    "morning": "週末のフライトに向けて✈️ 搭乗予定を事前に入力してPP単価のシミュレーションにも使えます。修行計画のお供に、ひっそり共有します。\nhttps://ana-mileage-app.vercel.app/\n#SFC修行 #ANAマイル",
+    "noon": "金曜日ですね。出先でもフライト実績をサクッと登録したくて作ったWebアプリです。スマホのブラウザで動くので、移動中の記録にどうぞ🛫\nhttps://ana-mileage-app.vercel.app/\n#ANAマイレージ",
+    "night": "今週もお疲れ様でした。週末に次回の修行ルートを練る方、他社便対応のこちらのツールがお役に立つかもしれません。自由にお使いください🙏\nhttps://ana-mileage-app.vercel.app/\n#SFC修行 #海外発券"
+  },
+  "Saturday": {
+    "morning": "本日から修行フライトに出る方も多いでしょうか✈️ スマホでポチポチPP単価やLTMを記録できるツールを作りました。よければお供にどうぞ！\nhttps://ana-mileage-app.vercel.app/\n#SFC修行 #ANAマイル",
+    "noon": "世界1100以上の空港を検索できるようにしました。海外発券や複雑な旅程を組む際のマイル計算に便利です。お暇な時に触ってみてください🌍\nhttps://ana-mileage-app.vercel.app/\n#ANAマイル #ミリオンマイラー",
+    "night": "個人で作っているPP管理アプリですが、「こんな機能ほしい」などあればアプリ内のボタンからこっそり教えてもらえると嬉しいです🙇‍♂️\nhttps://ana-mileage-app.vercel.app/\n#SFC修行"
+  },
+  "Sunday": {
+    "morning": "休日の朝に次の修行計画を立てるのが好きです。LTMやPP単価を可視化できるツールを作ったので、同じようなマイラーさんに届くと嬉しいです✈️\nhttps://ana-mileage-app.vercel.app/\n#SFC修行 #PP単価",
+    "noon": "目標のステータスを選ぶと、必要な残りPPを教えてくれます。自分用の備忘録ツールですが、モチベーション維持にお役立てください🛫\nhttps://ana-mileage-app.vercel.app/\n#ANAマイレージ",
+    "night": "明日からの1週間に向けて。フライト実績の管理を少しだけ楽にする無料のWebアプリです。エクセル入力が面倒な方、よろしければお試しを🌙\nhttps://ana-mileage-app.vercel.app/\n#SFC修行 #ミリオンマイラー"
+  }
+}
