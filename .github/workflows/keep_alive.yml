@@ -2,8 +2,9 @@ name: Keep Supabase Alive
 
 on:
   schedule:
+    # 3日ごとの午前9時 (JST) に自動実行 (UTC 0:00)
     - cron: '0 0 */3 * *'
-  workflow_dispatch:
+  workflow_dispatch: # 手動実行用
 
 jobs:
   keep-alive:
@@ -16,11 +17,15 @@ jobs:
         run: |
           BASE_URL="${SUPABASE_URL%/}"
           
-          echo "=== 接続先確認 ==="
-          echo "URL: ${BASE_URL}"
-          
-          echo "=== Supabaseレスポンス詳細 ==="
-          # レスポンスヘッダーとエラー本文を表示
-          curl -v "${BASE_URL}/rest/v1/feedbacks?select=*&limit=1" \
+          # feedbacksテーブルから1件取得して疎通確認（本文は出力せずステータスコードのみ取得）
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${BASE_URL}/rest/v1/feedbacks?select=id&limit=1" \
             -H "apikey: ${SUPABASE_ANON_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}"
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+          
+          echo "HTTP Status: $response"
+          if [ "$response" -ne 200 ]; then
+            echo "Failed to ping Supabase"
+            exit 1
+          fi
+          echo "Supabase is active!"
