@@ -1,0 +1,24 @@
+name: Keep Supabase Alive
+
+on:
+  schedule:
+    # 3日ごとの午前9時 (JST) に実行 (UTC 0:00)
+    - cron: '0 0 */3 * *'
+  workflow_dispatch: # 手動実行用
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase Database
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/airports?select=code&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}")
+          
+          echo "HTTP Status: $response"
+          if [ "$response" -ne 200 ]; then
+            echo "Failed to ping Supabase"
+            exit 1
+          fi
