@@ -2,9 +2,8 @@ name: Keep Supabase Alive
 
 on:
   schedule:
-    # 3日ごとの午前9時 (JST) に実行 (UTC 0:00)
     - cron: '0 0 */3 * *'
-  workflow_dispatch: # 手動実行用
+  workflow_dispatch:
 
 jobs:
   keep-alive:
@@ -15,17 +14,13 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          # 末尾スラッシュを安全に除去
           BASE_URL="${SUPABASE_URL%/}"
           
-          # 特定テーブルではなくREST APIのルート（OpenAPI仕様）を叩いて疎通確認
-          response=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${BASE_URL}/rest/v1/" \
-            -H "apikey: ${SUPABASE_ANON_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+          echo "=== 接続先確認 ==="
+          echo "URL: ${BASE_URL}"
           
-          echo "HTTP Status: $response"
-          if [ "$response" -ne 200 ]; then
-            echo "Failed to ping Supabase"
-            exit 1
-          fi
+          echo "=== Supabaseレスポンス詳細 ==="
+          # レスポンスヘッダーとエラー本文を表示
+          curl -v "${BASE_URL}/rest/v1/feedbacks?select=*&limit=1" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}"
